@@ -17,7 +17,7 @@ metodológica y rigor de taller de posgrado.*
 ## 1. Introducción
 
 En epidemiología de patrones espaciales (flores, banano, palma; también cáncer
-o cólera, como recuerda el profesor en los audios) es clave detectar la
+o cólera) es clave detectar la
 **coocurrencia** entre dos eventos: si la aparición de un patrón se asocia
 espacialmente con otro, controlar uno puede corregir el otro. La herramienta
 estándar para cuantificar asociación en patrones de puntos es la **K de Ripley**
