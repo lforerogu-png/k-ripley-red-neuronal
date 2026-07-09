@@ -200,48 +200,27 @@ def simular_dataset_concordancia(
 
 
 # ---------------------------------------------------------------------------
-# Entrenamiento con Keras (fallback a scikit-learn si TensorFlow no está)
+# Entrenamiento con MLPClassifier (scikit-learn)
 # ---------------------------------------------------------------------------
-def _entrenar_keras(X_tr, y_tr, X_te, epochs: int, seed: int):
-    """Entrena una red densa con Keras. Devuelve (y_pred, y_proba, backend)."""
-    import os
-
-    os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
-    import tensorflow as tf
-
-    tf.random.set_seed(seed)
-    n_features = X_tr.shape[1]
-    modelo = tf.keras.Sequential([
-        tf.keras.layers.Input(shape=(n_features,)),
-        tf.keras.layers.Dense(16, activation="relu"),
-        tf.keras.layers.Dense(8, activation="relu"),
-        tf.keras.layers.Dense(1, activation="sigmoid"),
-    ])
-    modelo.compile(
-        optimizer="adam", loss="binary_crossentropy", metrics=["accuracy"],
-    )
-    modelo.fit(X_tr, y_tr, epochs=epochs, batch_size=16, verbose=0)
-    proba = modelo.predict(X_te, verbose=0).ravel()
-    y_pred = (proba >= 0.5).astype(int)
-    return y_pred, proba, "keras"
-
-
-def _entrenar_sklearn(X_tr, y_tr, X_te, seed: int):
-    """Fallback con scikit-learn MLPClassifier."""
+def _entrenar_mlp_binario(X_tr, y_tr, X_te, seed: int, max_iter: int = 500):
+    """Entrena un MLP binario. Devuelve (y_pred, y_proba)."""
     from sklearn.neural_network import MLPClassifier
 
     modelo = MLPClassifier(
-        hidden_layer_sizes=(16, 8), activation="relu",
-        solver="adam", max_iter=500, random_state=seed,
+        hidden_layer_sizes=(16, 8),
+        activation="relu",
+        solver="adam",
+        max_iter=max_iter,
+        random_state=seed,
     )
     modelo.fit(X_tr, y_tr)
     if len(modelo.classes_) < 2:
-        y_pred = modelo.predict(X_te)
+        y_pred = modelo.predict(X_te).astype(int)
         proba = np.full(len(X_te), float(modelo.classes_[0]))
-        return y_pred.astype(int), proba, "sklearn"
+        return y_pred, proba
     proba = modelo.predict_proba(X_te)[:, 1]
     y_pred = (proba >= 0.5).astype(int)
-    return y_pred, proba, "sklearn"
+    return y_pred, proba
 
 
 def entrenar_red_concordancia(
@@ -249,10 +228,10 @@ def entrenar_red_concordancia(
     variables: list[str],
     target: str = "concordancia",
     pct_train: float = 0.8,
-    epochs: int = 80,
+    max_iter: int = 500,
     seed: int = 42,
 ) -> dict:
-    """Entrena la red (Keras o fallback) sobre filas de simulaciones.
+    """Entrena un MLP sobre filas de simulaciones.
 
     La partición ``pct_train`` se hace sobre las **filas** (simulaciones).
 
@@ -284,14 +263,11 @@ def entrenar_red_concordancia(
     y_tr, y_te = y[tr_idx], y[te_idx]
 
     if len(np.unique(y_tr)) < 2:
-        # Una sola clase en entrenamiento: predice esa clase constante.
         y_pred = np.full(len(te_idx), int(y_tr[0]))
         backend = "constante"
     else:
-        try:
-            y_pred, _, backend = _entrenar_keras(X_tr, y_tr, X_te, epochs, seed)
-        except Exception:  # noqa: BLE001  (TF ausente o error de backend)
-            y_pred, _, backend = _entrenar_sklearn(X_tr, y_tr, X_te, seed)
+        y_pred, _ = _entrenar_mlp_binario(X_tr, y_tr, X_te, seed, max_iter)
+        backend = "mlp"
 
     acc = accuracy_score(y_te, y_pred)
     return {

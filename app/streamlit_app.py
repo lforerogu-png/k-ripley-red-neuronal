@@ -1655,8 +1655,8 @@ with tab_conc:
         <p class="plain-text">
         Enfoque <strong>por simulación</strong> (complementario al modelo celda
         por celda). Cada simulación genera un par de patrones A y B con el tipo
-        fijo elegido y se resume en cuatro índices de concordancia. La red
-        neuronal (Keras) clasifica la etiqueta binaria derivada de la K de
+        fijo elegido y se resume en cuatro índices de concordancia. El perceptrón
+        multicapa (scikit-learn) clasifica la etiqueta binaria derivada de la K de
         Ripley cruzada, entrenando sobre <strong>filas de simulaciones</strong>.
         </p>
         """,
@@ -1721,7 +1721,7 @@ with tab_conc:
         n0_lbl = int((df_conc["concordancia"] == 0).sum())
         backend = res4.get("backend", "—")
         backend_txt = {
-            "keras": "Keras / TensorFlow", "sklearn": "scikit-learn (fallback)",
+            "mlp": "MLPClassifier (scikit-learn)",
             "constante": "clase constante (una sola clase)",
         }.get(backend, backend)
 
