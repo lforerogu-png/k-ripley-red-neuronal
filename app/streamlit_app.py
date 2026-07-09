@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import os
 import sys
+from typing import Optional
 
 import numpy as np
 import pandas as pd
@@ -32,6 +33,103 @@ st.set_page_config(page_title="K de Ripley + MLP", layout="wide")
 
 
 # ---------------------------------------------------------------------------
+# Funciones auxiliares: carga de datos propios (CSV) y patrones cacheados
+# ---------------------------------------------------------------------------
+def _generar_csv_ejemplo() -> bytes:
+    """CSV de ejemplo: 60 puntos aleatorios en escala de celda (0-30)."""
+    rng = np.random.default_rng(2024)
+    df_ejemplo = pd.DataFrame({
+        "x": np.round(rng.uniform(0, 30, size=60), 2),
+        "y": np.round(rng.uniform(0, 30, size=60), 2),
+    })
+    return df_ejemplo.to_csv(index=False).encode("utf-8")
+
+
+def _procesar_csv_subido(archivo, n_grid: int) -> dict:
+    """Lee, valida y convierte un CSV de coordenadas (x, y) a celdas de la grilla.
+
+    Devuelve un dict con claves ``error``, ``warning``, ``puntos`` (DataFrame
+    con columnas ``col``, ``row``, ``x``, ``y``, listo para usarse como
+    patrón A) e ``info`` (metadatos para el mensaje de éxito).
+    """
+    resultado: dict = {"error": None, "warning": None, "puntos": None, "info": None}
+    try:
+        df = pd.read_csv(archivo)
+        if df is None or df.empty:
+            resultado["error"] = "El archivo está vacío."
+            return resultado
+
+        columnas = {str(c).strip().lower(): c for c in df.columns}
+        if "x" not in columnas or "y" not in columnas:
+            resultado["error"] = "El archivo debe tener columnas 'x' e 'y'"
+            return resultado
+
+        x = pd.to_numeric(df[columnas["x"]], errors="coerce").to_numpy()
+        y = pd.to_numeric(df[columnas["y"]], errors="coerce").to_numpy()
+        validos = np.isfinite(x) & np.isfinite(y)
+        x, y = x[validos], y[validos]
+        if len(x) == 0:
+            resultado["error"] = "No se encontraron coordenadas numéricas válidas en 'x'/'y'."
+            return resultado
+
+        normalizado = bool(np.all(np.abs(x) <= 1) and np.all(np.abs(y) <= 1))
+        if normalizado:
+            x_celda, y_celda = x * n_grid, y * n_grid
+            escala_txt = "normalizada (0-1)"
+        else:
+            x_celda, y_celda = x, y
+            escala_txt = "celdas (0-30)"
+
+        col = np.clip(np.floor(x_celda).astype(int) + 1, 1, n_grid)
+        row = np.clip(np.floor(y_celda).astype(int) + 1, 1, n_grid)
+        puntos = (
+            pd.DataFrame({"col": col, "row": row})
+            .drop_duplicates()
+            .reset_index(drop=True)
+        )
+        if len(puntos) == 0:
+            resultado["error"] = "No quedaron puntos válidos después de eliminar duplicados."
+            return resultado
+
+        if len(puntos) > 500:
+            puntos = puntos.iloc[:500].reset_index(drop=True)
+            resultado["warning"] = (
+                "Se usarán solo los primeros 500 puntos para mantener el rendimiento"
+            )
+        elif len(puntos) < 10:
+            resultado["warning"] = (
+                "Se recomienda tener al menos 10 puntos para un análisis confiable "
+                "de K de Ripley"
+            )
+
+        puntos["x"] = (puntos["col"] - 0.5) / n_grid
+        puntos["y"] = (puntos["row"] - 0.5) / n_grid
+
+        resultado["puntos"] = puntos
+        resultado["info"] = {
+            "n": len(puntos),
+            "escala": escala_txt,
+            "rango": (
+                f"x:[{x_celda.min():.1f}, {x_celda.max():.1f}]  "
+                f"y:[{y_celda.min():.1f}, {y_celda.max():.1f}]"
+            ),
+        }
+    except Exception as exc:  # noqa: BLE001 - captura cualquier archivo corrupto
+        resultado["error"] = f"No se pudo procesar el archivo: {exc}"
+    return resultado
+
+
+@st.cache_data(show_spinner=False)
+def _patron_simulado(tipo, n, seed, n_grid):
+    return generar_patron(tipo, n, seed, n_grid=n_grid)
+
+
+@st.cache_data(show_spinner=False)
+def _patron_condicionado(p1, tipo2, n2, n_coincidentes, seed2, n_grid):
+    return generar_patron_condicionado(p1, tipo2, n2, n_coincidentes, seed2, n_grid=n_grid)
+
+
+# ---------------------------------------------------------------------------
 # Barra lateral: controles
 # ---------------------------------------------------------------------------
 st.sidebar.title("Controles")
@@ -39,15 +137,61 @@ st.sidebar.title("Controles")
 st.sidebar.header("Grilla")
 n_grid = st.sidebar.slider("Tamaño de grilla (N x N)", 10, 50, 30, 5)
 
+st.sidebar.header("📂 Cargar datos propios")
+archivo_csv = st.sidebar.file_uploader(
+    "Subir CSV con coordenadas", type=["csv"], key="csv_uploader"
+)
+st.sidebar.caption(
+    "El CSV debe tener columnas llamadas exactamente 'x' e 'y' con las "
+    "coordenadas de los puntos. Valores entre 0 y 30 (coordenadas de celda) "
+    "o entre 0 y 1 (normalizadas) — se detectan automáticamente."
+)
+st.sidebar.download_button(
+    "Descargar CSV de ejemplo",
+    data=_generar_csv_ejemplo(),
+    file_name="ejemplo_puntos.csv",
+    mime="text/csv",
+)
+
+puntos_subidos: Optional[pd.DataFrame] = None
+usar_datos_propios = False
+if archivo_csv is not None:
+    resultado_csv = _procesar_csv_subido(archivo_csv, n_grid)
+    if resultado_csv["error"]:
+        st.sidebar.error(resultado_csv["error"])
+    else:
+        puntos_subidos = resultado_csv["puntos"]
+        if resultado_csv["warning"]:
+            st.sidebar.warning(resultado_csv["warning"])
+        info = resultado_csv["info"]
+        st.sidebar.success(
+            f"Se cargaron {info['n']} puntos válidos. Escala detectada: "
+            f"{info['escala']}. Rango: {info['rango']}."
+        )
+    usar_datos_propios = st.sidebar.checkbox(
+        "Usar datos cargados en lugar del simulador",
+        value=puntos_subidos is not None,
+        disabled=puntos_subidos is None,
+    )
+
 st.sidebar.header("Patrón A (azul)")
-tipo1 = st.sidebar.selectbox("Tipo A", ["agrupado", "disperso", "aleatorio"], 0)
-n1 = st.sidebar.slider("Puntos A", 1, 500, 120, 1)
-seed1 = st.sidebar.number_input("Semilla A", 1, 999999, 101)
+tipo1 = st.sidebar.selectbox(
+    "Tipo A", ["agrupado", "disperso", "aleatorio"], 0, disabled=usar_datos_propios,
+)
+n1 = st.sidebar.slider(
+    "Puntos A", 1, 500, 120, 1, disabled=usar_datos_propios,
+)
+seed1 = st.sidebar.number_input(
+    "Semilla A", 1, 999999, 101, disabled=usar_datos_propios,
+)
 
 st.sidebar.header("Patrón B (amarillo)")
 tipo2 = st.sidebar.selectbox("Tipo B", ["agrupado", "disperso", "aleatorio"], 1)
 n2 = st.sidebar.slider("Puntos B", 1, 500, 120, 1)
-max_coinc = int(min(n1, n2))
+n_efectivo_1 = (
+    len(puntos_subidos) if (usar_datos_propios and puntos_subidos is not None) else n1
+)
+max_coinc = int(min(n_efectivo_1, n2))
 n_coincidentes = st.sidebar.slider(
     "Celdas coincidentes B con A", 0, max_coinc, min(30, max_coinc), 1
 )
@@ -84,16 +228,11 @@ tab_pat, tab_k, tab_grilla, tab_mlp, tab_teoria = st.tabs(
 )
 
 
-@st.cache_data(show_spinner=False)
-def _generar(tipo1, n1, seed1, tipo2, n2, n_coincidentes, seed2, n_grid):
-    p1 = generar_patron(tipo1, n1, seed1, n_grid=n_grid)
-    p2 = generar_patron_condicionado(
-        p1, tipo2, n2, n_coincidentes, seed2, n_grid=n_grid
-    )
-    return p1, p2
-
-
-p1, p2 = _generar(tipo1, n1, seed1, tipo2, n2, n_coincidentes, seed2, n_grid)
+if usar_datos_propios and puntos_subidos is not None:
+    p1 = puntos_subidos
+else:
+    p1 = _patron_simulado(tipo1, n1, seed1, n_grid)
+p2 = _patron_condicionado(p1, tipo2, n2, n_coincidentes, seed2, n_grid)
 resumen = dataset.analizar_par(p1, p2, r_ref=r_ref, metodo=metodo_k)
 
 
@@ -101,9 +240,13 @@ resumen = dataset.analizar_par(p1, p2, r_ref=r_ref, metodo=metodo_k)
 # Tab 1: patrones
 # ---------------------------------------------------------------------------
 with tab_pat:
+    if usar_datos_propios and puntos_subidos is not None:
+        titulo_a = f"Patrón A: datos reales ({len(p1)} puntos)"
+    else:
+        titulo_a = f"Patrón A: {tipo1}"
     c1, c2, c3 = st.columns(3)
     with c1:
-        st.pyplot(viz.fig_patron(p1, "#1565C0", f"Patrón A: {tipo1}", n_grid))
+        st.pyplot(viz.fig_patron(p1, "#1565C0", titulo_a, n_grid))
     with c2:
         st.pyplot(viz.fig_patron(p2, "#F9A825", f"Patrón B: {tipo2}", n_grid))
     with c3:
@@ -181,11 +324,18 @@ with tab_mlp:
         "Entrena el MLP sobre simulaciones y evalúa **solo en celdas "
         "coloreadas**. Genera matrices 3x3 y 2x2."
     )
+    p1_fijo_mlp = p1 if (usar_datos_propios and puntos_subidos is not None) else None
+    if p1_fijo_mlp is not None:
+        st.info(
+            f"Se usará el patrón A cargado ({len(p1_fijo_mlp)} puntos reales) "
+            "como patrón A **fijo** en todas las simulaciones de entrenamiento; "
+            "solo el patrón B variará."
+        )
     if st.button("Entrenar y evaluar", type="primary"):
         with st.spinner("Simulando datos y entrenando..."):
             datos = dataset.simular_dataset(
                 n_sim=n_sim, n_grid=n_grid, n_pts_min=60, n_pts_max=200,
-                r_ref=r_ref, metodo=metodo_k, seed=42,
+                r_ref=r_ref, metodo=metodo_k, seed=42, p1_fijo=p1_fijo_mlp,
             )
             fracs = (pct_train / 100, (1 - pct_train / 100) / 2,
                      (1 - pct_train / 100) / 2)

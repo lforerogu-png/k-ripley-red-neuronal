@@ -215,6 +215,7 @@ def simular_dataset(
     seed: int = 42,
     n_sim_env: int = 39,
     verbose: bool = False,
+    p1_fijo: Optional[pd.DataFrame] = None,
 ) -> pd.DataFrame:
     """Simula ``n_sim`` pares de patrones y arma el dataset completo.
 
@@ -234,6 +235,10 @@ def simular_dataset(
     n_coincidentes_rango:
         Rango (min, max) de celdas coincidentes forzadas; por defecto se elige
         entre 0 y min(n_pts, n_A).
+    p1_fijo:
+        Si se provee (por ejemplo, puntos reales cargados desde un CSV), se
+        usa este patrón A **fijo** en todas las simulaciones en lugar de
+        generarlo al azar; solo el patrón B varía entre simulaciones.
     """
     tipos = ("agrupado", "disperso", "aleatorio")
     rng = np.random.default_rng(seed)
@@ -245,11 +250,14 @@ def simular_dataset(
     while ok < n_sim and intentos < n_sim * 5:
         intentos += 1
         s = int(rng.integers(1, 10_000_000))
-        t1 = tipos[rng.integers(3)]
         t2 = tipos[rng.integers(3)]
         n_pts = int(rng.integers(n_pts_min, n_pts_max + 1))
 
-        p1 = generar_patron(t1, n_pts, s, n_grid=n_grid)
+        if p1_fijo is not None:
+            p1 = p1_fijo
+        else:
+            t1 = tipos[rng.integers(3)]
+            p1 = generar_patron(t1, n_pts, s, n_grid=n_grid)
         if len(p1) == 0:
             continue
         max_coinc = min(len(p1), n_pts)
