@@ -538,7 +538,9 @@ _inject_css()
 st.sidebar.markdown("### Controles")
 
 _sidebar_section("Grilla")
-n_grid = st.sidebar.slider("Tamaño de grilla (N × N)", 10, 50, 30, 5)
+n_grid = st.sidebar.slider(
+    "Tamaño de grilla (N × N)", 10, 50, 30, 5, key="n_grid",
+)
 
 _sidebar_section("Datos observados — Patrón A")
 archivo_csv_a = st.sidebar.file_uploader(
@@ -614,23 +616,26 @@ if archivo_csv_b is not None:
 
 _sidebar_section("Patrón A")
 tipo1 = st.sidebar.selectbox(
-    "Distribución espacial", ["agrupado", "disperso", "aleatorio"], 0,
-    disabled=usar_datos_propios_a,
+    "Distribución espacial (A)", ["agrupado", "disperso", "aleatorio"], 0,
+    disabled=usar_datos_propios_a, key="tipo_a",
 )
 n1 = st.sidebar.slider(
-    "Número de puntos", 1, 500, 120, 1, disabled=usar_datos_propios_a,
+    "Número de puntos (A)", 1, 500, 120, 1,
+    disabled=usar_datos_propios_a, key="n_puntos_a",
 )
 seed1 = st.sidebar.number_input(
-    "Semilla aleatoria", 1, 999999, 101, disabled=usar_datos_propios_a,
+    "Semilla aleatoria (A)", 1, 999999, 101,
+    disabled=usar_datos_propios_a, key="seed_a",
 )
 
 _sidebar_section("Patrón B")
 tipo2 = st.sidebar.selectbox(
-    "Distribución espacial", ["agrupado", "disperso", "aleatorio"], 1,
-    disabled=usar_datos_propios_b,
+    "Distribución espacial (B)", ["agrupado", "disperso", "aleatorio"], 1,
+    disabled=usar_datos_propios_b, key="tipo_b",
 )
 n2 = st.sidebar.slider(
-    "Número de puntos", 1, 500, 120, 1, disabled=usar_datos_propios_b,
+    "Número de puntos (B)", 1, 500, 120, 1,
+    disabled=usar_datos_propios_b, key="n_puntos_b",
 )
 n_efectivo_1 = (
     len(puntos_subidos_a) if (usar_datos_propios_a and puntos_subidos_a is not None) else n1
@@ -640,31 +645,41 @@ n_coincidentes = st.sidebar.slider(
     "Celdas coincidentes (B|A)", 0, max_coinc, min(30, max_coinc), 1,
     disabled=usar_datos_propios_b,
     help="No aplica con datos observados en B.",
+    key="n_coincidentes",
 )
 seed2 = st.sidebar.number_input(
-    "Semilla aleatoria", 1, 999999, 202, disabled=usar_datos_propios_b,
+    "Semilla aleatoria (B)", 1, 999999, 202,
+    disabled=usar_datos_propios_b, key="seed_b",
 )
 
 _sidebar_section("K de Ripley")
-r_ref = st.sidebar.slider("Radio de referencia r", 0.05, 0.25, 0.20, 0.01)
+r_ref = st.sidebar.slider(
+    "Radio de referencia r", 0.05, 0.25, 0.20, 0.01, key="r_ref",
+)
 metodo_k = st.sidebar.radio(
     "Criterio de clasificación",
     ["umbral", "envolvente"],
     index=0,
     help="Umbral fijo (πr²) o envolventes Monte Carlo bajo CSR.",
+    key="metodo_k",
 )
 
 _sidebar_section("Red neuronal")
-n_sim = st.sidebar.slider("Simulaciones", 30, 400, 150, 10)
-pct_train = st.sidebar.slider("Proporción entrenamiento (%)", 50, 90, 70, 5)
+n_sim = st.sidebar.slider("Simulaciones", 30, 400, 150, 10, key="n_sim")
+pct_train = st.sidebar.slider(
+    "Proporción entrenamiento (%)", 50, 90, 70, 5, key="pct_train",
+)
 capa = st.sidebar.selectbox(
     "Arquitectura oculta",
     ["(8,)", "(16,)", "(16, 8)", "(32, 16)", "(32, 16, 8)"], 2,
+    key="capa",
 )
-lr = st.sidebar.select_slider("Tasa de aprendizaje", [0.001, 0.01, 0.1], 0.01)
+lr = st.sidebar.select_slider(
+    "Tasa de aprendizaje", [0.001, 0.01, 0.1], 0.01, key="lr",
+)
 
 st.sidebar.markdown("<div style='margin-top:1.5rem'></div>", unsafe_allow_html=True)
-entrenar_click = st.sidebar.button("Entrenar modelo", type="primary")
+entrenar_click = st.sidebar.button("Entrenar modelo", type="primary", key="btn_entrenar")
 
 # ---------------------------------------------------------------------------
 # Patrones y resumen K
