@@ -1,0 +1,4 @@
+modelo,accuracy,f1_macro,f1_weighted
+MLP(16x8),0.9833,0.9726,0.9832
+SVM(rbf),0.9833,0.9726,0.9832
+RandomForest,0.9789,0.9654,0.9788

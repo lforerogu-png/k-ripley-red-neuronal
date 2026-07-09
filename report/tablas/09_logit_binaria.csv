@@ -1,0 +1,9 @@
+variable,coef,std_err,z,p_valor,ic_inf,ic_sup,odds_ratio,significativo
+const,-2.4238,,,,,,0.0886,False
+k1_n,-0.3357,,,,,,0.7148,False
+k2_n,-0.1031,,,,,,0.902,False
+k12_n,0.5268,,,,,,1.6935,False
+cls1_f,-0.1525,,,,,,0.8586,False
+cls2_f,-0.0254,,,,,,0.9749,False
+ocupa_p1,6.9077,,,,,,999.9701,False
+ocupa_p2,6.3445,,,,,,569.3488,False

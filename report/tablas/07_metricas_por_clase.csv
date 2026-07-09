@@ -1,0 +1,4 @@
+clase,precision,recall,f1,support
+atraccion,1.0,0.911,0.954,778
+repulsion,1.0,1.0,1.0,2422
+sin_coocurrencia,0.931,1.0,0.964,932

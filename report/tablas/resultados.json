@@ -1,0 +1,51 @@
+{
+  "n_total_celdas": 135000,
+  "n_blancas": 109345,
+  "n_coloreadas": 25655,
+  "pct_blancas": 81.0,
+  "distribucion_clases": {
+    "repulsion": 16160,
+    "sin_coocurrencia": 6264,
+    "atraccion": 3231
+  },
+  "acuerdo_umbral_envolvente": 32.5,
+  "cv_media": 0.994,
+  "cv_std": 0.0072,
+  "mejor_arquitectura": "L1[8]_lr0.001",
+  "accuracy_3clases": 0.9833,
+  "macro_f1_3clases": 0.9726,
+  "auc_ovr": {
+    "atraccion": 1.0,
+    "repulsion": 1.0,
+    "sin_coocurrencia": 1.0,
+    "macro": 1.0
+  },
+  "accuracy_binario": 1.0,
+  "metricas_binario": {
+    "accuracy": 1.0,
+    "sensibilidad": 1.0,
+    "especificidad": 1.0,
+    "precision": 1.0,
+    "f1": 1.0
+  },
+  "logit_binaria_auc": 1.0,
+  "logit_binaria_separacion": true,
+  "seleccion_aic": [
+    "k1_n",
+    "k2_n",
+    "k12_n",
+    "cls1_f",
+    "ocupa_p2"
+  ],
+  "logit_multinomial_acc": 0.9833,
+  "moran_agrupado_I": 0.1905,
+  "moran_agrupado_p": 0.002,
+  "moran_agrupado_interp": "autocorrelación positiva: valores similares se agrupan",
+  "moran_aleatorio_I": -0.0204,
+  "moran_aleatorio_p": 0.238,
+  "lisa_clusters_agrupado": {
+    "ns": 790,
+    "HH": 55,
+    "LH": 55
+  }
+}

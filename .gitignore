@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# Entornos virtuales
+.venv/
+venv/
+env/
+
+# Secretos y configuración local
+.env
+.env.*
+
+# Logs temporales de Streamlit
+app/_st*.log
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+
+# Jupyter checkpoints
+.ipynb_checkpoints/
+
+# Sistema operativo
+Thumbs.db
+Desktop.ini
+.DS_Store
