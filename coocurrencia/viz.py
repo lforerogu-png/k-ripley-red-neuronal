@@ -87,8 +87,19 @@ def fig_grilla_colores(p1, p2, n_grid=30, titulo="Superposición (4 colores)"):
     cmap = ListedColormap([COLOR_BLANCA, COLOR_SOLO_A, COLOR_SOLO_B, COLOR_AMBOS])
     norm = BoundaryNorm([-0.5, 0.5, 1.5, 2.5, 3.5], cmap.N)
     fig, ax = plt.subplots(figsize=(4.2, 4.2))
-    ax.imshow(estado, cmap=cmap, norm=norm, origin="lower",
-              extent=(0.5, n_grid + 0.5, 0.5, n_grid + 0.5))
+    ax.imshow(
+        estado,
+        cmap=cmap,
+        norm=norm,
+        origin="lower",
+        extent=(0.5, n_grid + 0.5, 0.5, n_grid + 0.5),
+        interpolation="nearest",
+        zorder=1,
+    )
+    _dibujar_grilla_celdas(ax, n_grid)
+    ax.set_xlim(0.5, n_grid + 0.5)
+    ax.set_ylim(0.5, n_grid + 0.5)
+    ax.set_aspect("equal")
     ax.set_xticks([]); ax.set_yticks([])
     ax.set_title(titulo, fontsize=10, fontweight="bold")
     from matplotlib.patches import Patch
