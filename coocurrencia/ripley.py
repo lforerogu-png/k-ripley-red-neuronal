@@ -153,6 +153,42 @@ class ResultadoK:
         return float(val) if np.isfinite(val) else float(np.pi * r_ref**2)
 
 
+@dataclass
+class ResultadoL:
+    """Curva L de Ripley (transformación de Besag) evaluada en una malla ``r``.
+
+    Se define como :math:`L(r) = \\sqrt{K(r)/\\pi} - r`. Bajo CSR,
+    :math:`K(r)=\\pi r^2` y por tanto :math:`L(r)=0`.
+    """
+
+    r: np.ndarray
+    l: np.ndarray
+    l_teorica: np.ndarray  # 0 bajo CSR
+
+    def valor_en(self, r_ref: float) -> float:
+        """Devuelve L interpolada/al radio más cercano a ``r_ref``."""
+        if len(self.r) == 0:
+            return 0.0
+        idx = int(np.argmin(np.abs(self.r - r_ref)))
+        val = self.l[idx]
+        return float(val) if np.isfinite(val) else 0.0
+
+
+def k_a_l(res: ResultadoK) -> ResultadoL:
+    """Transforma una curva K en la función L de Ripley (Besag, 1977).
+
+    .. math::
+        L(r) = \\sqrt{K(r)/\\pi} - r
+
+    Bajo CSR (:math:`K(r)=\\pi r^2`) resulta :math:`L(r)=0`. Valores
+    positivos indican agrupamiento/atracción; negativos, dispersión/repulsión.
+    """
+    k_segura = np.maximum(np.asarray(res.k, dtype=float), 0.0)
+    l = np.sqrt(k_segura / np.pi) - res.r
+    l_teorica = np.zeros_like(res.r, dtype=float)
+    return ResultadoL(r=res.r, l=l, l_teorica=l_teorica)
+
+
 def rmax_por_defecto(area: float = 1.0) -> float:
     """Radio máximo por defecto (regla de spatstat: 1/4 del lado)."""
     return 0.25 * np.sqrt(area)
@@ -286,6 +322,20 @@ class Envolvente:
     lo: np.ndarray
     hi: np.ndarray
     media: np.ndarray
+
+
+def envolvente_k_a_l(env: Envolvente) -> Envolvente:
+    """Convierte una envolvente de K a la escala L."""
+    def _conv(curva: np.ndarray) -> np.ndarray:
+        k_segura = np.maximum(np.asarray(curva, dtype=float), 0.0)
+        return np.sqrt(k_segura / np.pi) - env.r
+
+    return Envolvente(
+        r=env.r,
+        lo=_conv(env.lo),
+        hi=_conv(env.hi),
+        media=_conv(env.media),
+    )
 
 
 def envolvente_csr(

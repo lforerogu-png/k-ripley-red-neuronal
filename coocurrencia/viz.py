@@ -233,6 +233,44 @@ def fig_curva_k(
     return fig
 
 
+def fig_curva_l(
+    res,
+    titulo,
+    color=ACCENT,
+    envolvente=None,
+    r_ref=0.2,
+    clasificacion: Optional[str] = None,
+):
+    """Curva L observada vs CSR (L=0) con relleno, anotación y tema oscuro."""
+    fig, ax = plt.subplots(figsize=(3.8, 3.2), facecolor=BG_MAIN)
+    _estilo_ax(ax, titulo=titulo)
+
+    ax.fill_between(res.r, res.l, res.l_teorica, color=color, alpha=0.10, zorder=1)
+    ax.plot(res.r, res.l, color=color, lw=2, label="L observada", zorder=3)
+    ax.plot(res.r, res.l_teorica, "--", color=CSR_GRAY, lw=1.2, label="CSR (L=0)", zorder=2)
+    if envolvente is not None:
+        ax.fill_between(
+            envolvente.r, envolvente.lo, envolvente.hi,
+            color=CSR_GRAY, alpha=0.18, label="Envolvente CSR", zorder=1,
+        )
+    ax.axvline(r_ref, color=CSR_GRAY, ls=":", lw=1, alpha=0.7, zorder=2)
+    ax.axhline(0.0, color=CSR_GRAY, ls="-", lw=0.6, alpha=0.35, zorder=1)
+
+    if clasificacion:
+        etiqueta = _etiqueta_clasificacion(clasificacion)
+        ax.text(
+            0.98, 0.98, etiqueta,
+            transform=ax.transAxes, ha="right", va="top",
+            fontsize=9, color=TEXT_PRIMARY, fontweight="500",
+        )
+
+    ax.set_xlabel("Radio r")
+    ax.set_ylabel("L(r)")
+    ax.legend(fontsize=7, loc="lower right", framealpha=0.85)
+    fig.subplots_adjust(left=0.14, right=0.96, top=0.88, bottom=0.18)
+    return fig
+
+
 def fig_curvas_aprendizaje(resultado, titulo="Curvas de aprendizaje"):
     """Curvas de pérdida train/val con sombreado de sobreajuste."""
     fig, ax = plt.subplots(figsize=(4.5, 3.2), facecolor=BG_MAIN)

@@ -837,23 +837,41 @@ with tab_k:
             resumen.k1_curva, "K univariada — A", clasificacion=resumen.cls1,
             envolvente=envs["k1"], r_ref=r_ref,
         ), use_container_width=True)
+        st.pyplot(viz.fig_curva_l(
+            ripley.k_a_l(resumen.k1_curva), "L univariada — A",
+            clasificacion=resumen.cls1,
+            envolvente=ripley.envolvente_k_a_l(envs["k1"]) if envs["k1"] else None,
+            r_ref=r_ref,
+        ), use_container_width=True)
     with c2:
         st.pyplot(viz.fig_curva_k(
             resumen.k2_curva, "K univariada — B", color="#ffa726",
             clasificacion=resumen.cls2, envolvente=envs["k2"], r_ref=r_ref,
+        ), use_container_width=True)
+        st.pyplot(viz.fig_curva_l(
+            ripley.k_a_l(resumen.k2_curva), "L univariada — B", color="#ffa726",
+            clasificacion=resumen.cls2,
+            envolvente=ripley.envolvente_k_a_l(envs["k2"]) if envs["k2"] else None,
+            r_ref=r_ref,
         ), use_container_width=True)
     with c3:
         st.pyplot(viz.fig_curva_k(
             resumen.k12_curva, "K cruzada — K₁₂", color="#66bb6a",
             clasificacion=resumen.clase_biv, envolvente=envs["k12"], r_ref=r_ref,
         ), use_container_width=True)
+        st.pyplot(viz.fig_curva_l(
+            ripley.k_a_l(resumen.k12_curva), "L cruzada — L₁₂", color="#66bb6a",
+            clasificacion=resumen.clase_biv,
+            envolvente=ripley.envolvente_k_a_l(envs["k12"]) if envs["k12"] else None,
+            r_ref=r_ref,
+        ), use_container_width=True)
 
     st.markdown(
         """
         <p class="plain-text">
-        <strong>K &gt; πr²</strong> — agrupamiento o atracción &nbsp;·&nbsp;
-        <strong>K ≈ πr²</strong> — aleatoriedad (CSR) o independencia &nbsp;·&nbsp;
-        <strong>K &lt; πr²</strong> — dispersión o repulsión
+        <strong>K &gt; πr²</strong> / <strong>L &gt; 0</strong> — agrupamiento o atracción &nbsp;·&nbsp;
+        <strong>K ≈ πr²</strong> / <strong>L ≈ 0</strong> — aleatoriedad (CSR) o independencia &nbsp;·&nbsp;
+        <strong>K &lt; πr²</strong> / <strong>L &lt; 0</strong> — dispersión o repulsión
         </p>
         """,
         unsafe_allow_html=True,
