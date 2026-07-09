@@ -153,6 +153,40 @@ def matriz_estados(p1, p2, n_grid=30) -> np.ndarray:
     return estado
 
 
+def _kernel_disco(radio: int, *, incluir_centro: bool = False) -> np.ndarray:
+    """Kernel circular para contar vecinos en un radio de ``radio`` celdas."""
+    tam = 2 * radio + 1
+    centro = radio
+    kernel = np.zeros((tam, tam), dtype=float)
+    for i in range(tam):
+        for j in range(tam):
+            di, dj = i - centro, j - centro
+            if di * di + dj * dj <= radio * radio:
+                if incluir_centro or di != 0 or dj != 0:
+                    kernel[i, j] = 1.0
+    return kernel
+
+
+def matriz_densidad_coocurrencia(
+    p1,
+    p2,
+    n_grid: int = 30,
+    radio: int = 3,
+) -> np.ndarray:
+    """Cuenta vecinos verdes (ambos patrones) dentro de un disco de ``radio`` celdas.
+
+    Para cada celda de la grilla devuelve cuántas celdas vecinas — excluyendo
+    la propia — con estado ``3`` (coocurrencia) caen a distancia euclidiana
+    ≤ ``radio`` en unidades de celda.
+    """
+    from scipy.ndimage import convolve
+
+    estado = matriz_estados(p1, p2, n_grid)
+    verde = (estado == 3).astype(float)
+    kernel = _kernel_disco(radio, incluir_centro=False)
+    return convolve(verde, kernel, mode="constant", cval=0.0)
+
+
 def fig_grilla_colores(
     p1,
     p2,
@@ -193,6 +227,54 @@ def fig_grilla_colores(
                       edgecolor=BORDER, alpha=0.9),
         )
     fig.subplots_adjust(left=0.02, right=0.98, top=0.92, bottom=0.02)
+    return fig
+
+
+def fig_densidad_coocurrencia_local(
+    p1,
+    p2,
+    n_grid: int = 30,
+    radio: int = 3,
+    titulo: str = "Densidad de coocurrencia local",
+):
+    """Heatmap de vecinos verdes en un radio local (colormap hot invertido)."""
+    densidad = matriz_densidad_coocurrencia(p1, p2, n_grid, radio=radio)
+    vmax = max(float(densidad.max()), 1.0)
+
+    fig, ax = plt.subplots(figsize=(4.2, 4.2), facecolor=BG_MAIN)
+    im = ax.imshow(
+        densidad,
+        cmap="hot_r",
+        origin="lower",
+        extent=(0.5, n_grid + 0.5, 0.5, n_grid + 0.5),
+        interpolation="nearest",
+        vmin=0,
+        vmax=vmax,
+        zorder=1,
+    )
+    _dibujar_grilla_celdas(ax, n_grid)
+    ax.set_xlim(0.5, n_grid + 0.5)
+    ax.set_ylim(0.5, n_grid + 0.5)
+    ax.set_aspect("equal")
+    ax.set_xticks([])
+    ax.set_yticks([])
+    _estilo_ax(ax, titulo=titulo)
+    for spine in ax.spines.values():
+        spine.set_visible(False)
+
+    cbar = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+    cbar.set_label("Vecinos verdes", color=TEXT_SECONDARY, fontsize=8)
+    cbar.ax.yaxis.set_tick_params(color=TEXT_SECONDARY, labelcolor=TEXT_SECONDARY)
+    cbar.outline.set_edgecolor(BORDER)
+
+    ax.text(
+        0.02, 0.98, f"Radio local: {radio} celdas",
+        transform=ax.transAxes, ha="left", va="top",
+        fontsize=8, color=TEXT_SECONDARY,
+        bbox=dict(boxstyle="round,pad=0.3", facecolor=BG_PANEL,
+                  edgecolor=BORDER, alpha=0.9),
+    )
+    fig.subplots_adjust(left=0.02, right=0.88, top=0.92, bottom=0.02)
     return fig
 
 

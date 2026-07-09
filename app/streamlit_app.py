@@ -1054,6 +1054,31 @@ with tab_grilla:
         Solo A: {n_azul} &nbsp;|&nbsp; Solo B: {n_amar} &nbsp;|&nbsp;
         Ambos: {n_verde} &nbsp;|&nbsp; Sin eventos: {n_blanca}
         </p>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    st.markdown(
+        '<p class="section-title" style="margin-top:1.5rem;">'
+        'Densidad de coocurrencia local</p>',
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        """
+        <p class="plain-text">
+        Para cada celda se cuenta cuántas vecinas (radio de 3 celdas) tienen
+        ambos patrones presentes. Las zonas más intensas concentran coocurrencia
+        espacial que puede no verse en la grilla de colores plana.
+        </p>
+        """,
+        unsafe_allow_html=True,
+    )
+    st.pyplot(
+        viz.fig_densidad_coocurrencia_local(p1, p2, n_grid),
+        use_container_width=False,
+    )
+    st.markdown(
+        """
         <p class="plain-text" style="margin-top:0.5rem;">
         Las celdas sin evento se excluyen del espacio de evaluación del modelo
         y se reportan únicamente con fines descriptivos.
