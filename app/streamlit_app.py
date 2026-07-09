@@ -24,7 +24,8 @@ import streamlit as st
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from coocurrencia import (  # noqa: E402
-    CLASES_2, CLASES_3, dataset, importance, metrics, models, ripley, viz,
+    CLASES_2, CLASES_3, concordancia, dataset, importance, metrics, models,
+    ripley, viz,
 )
 from coocurrencia.patterns import (  # noqa: E402
     contar_coincidencias, generar_patron, generar_patron_condicionado,
@@ -1041,6 +1042,39 @@ lr = st.sidebar.select_slider(
 st.sidebar.markdown("<div style='margin-top:1.5rem'></div>", unsafe_allow_html=True)
 entrenar_click = st.sidebar.button("Entrenar modelo", type="primary", key="btn_entrenar")
 
+_sidebar_section("Modo simulaciones (concordancia)")
+conc_n_sim = st.sidebar.slider(
+    "Número de simulaciones", 50, 500, 200, 10, key="conc_n_sim",
+    help="Cada simulación produce una fila del dataset (índices + etiqueta).",
+)
+conc_tipo_a = st.sidebar.selectbox(
+    "Tipo fijo Patrón A", ["agrupado", "disperso", "aleatorio"], 0,
+    key="conc_tipo_a",
+)
+conc_tipo_b = st.sidebar.selectbox(
+    "Tipo fijo Patrón B", ["agrupado", "disperso", "aleatorio"], 1,
+    key="conc_tipo_b",
+)
+conc_definicion_label = st.sidebar.selectbox(
+    "Concordancia significa",
+    ["Solo verde (coocurrencia)", "Verde + azul + amarillo (asociación)"],
+    0,
+    key="conc_definicion",
+    help=(
+        "Solo verde: etiqueta 1 si la K cruzada indica atracción. "
+        "Verde+azul+amarillo: etiqueta 1 si hay cualquier asociación "
+        "espacial (atracción o repulsión)."
+    ),
+)
+conc_incluir_join = st.sidebar.checkbox(
+    "Incluir Join Count como variable adicional", value=False,
+    key="conc_join",
+)
+conc_pct_train = st.sidebar.slider(
+    "Proporción entrenamiento (%) — simulaciones", 60, 90, 80, 5,
+    key="conc_pct_train",
+)
+
 # ---------------------------------------------------------------------------
 # Patrones y resumen K
 # ---------------------------------------------------------------------------
@@ -1119,12 +1153,13 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-tab_pat, tab_k, tab_aniso, tab_grilla, tab_mlp, tab_teoria = st.tabs([
+tab_pat, tab_k, tab_aniso, tab_grilla, tab_mlp, tab_conc, tab_teoria = st.tabs([
     "Patrones",
     "Funciones K",
     "Anisotropía",
     "Grilla",
     "Modelo",
+    "Concordancia (simulaciones)",
     "Referencia",
 ])
 
@@ -1609,6 +1644,167 @@ with tab_mlp:
         )
         if st.button("Limpiar comparación de arquitecturas", key="btn_limpiar_arq"):
             del st.session_state["comparacion_arq"]
+            st.rerun()
+
+# ---------------------------------------------------------------------------
+# Tab: Concordancia (clasificación por simulaciones)
+# ---------------------------------------------------------------------------
+with tab_conc:
+    st.markdown(
+        """
+        <p class="plain-text">
+        Enfoque <strong>por simulación</strong> (complementario al modelo celda
+        por celda). Cada simulación genera un par de patrones A y B con el tipo
+        fijo elegido y se resume en cuatro índices de concordancia. La red
+        neuronal (Keras) clasifica la etiqueta binaria derivada de la K de
+        Ripley cruzada, entrenando sobre <strong>filas de simulaciones</strong>.
+        </p>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    conc_definicion = (
+        concordancia.CONCORDANCIA_CUALQUIERA
+        if conc_definicion_label.startswith("Verde +")
+        else concordancia.CONCORDANCIA_SOLO_VERDE
+    )
+    st.markdown(
+        f'<p class="plain-text">Configuración: {conc_n_sim} simulaciones · '
+        f'A = {conc_tipo_a} · B = {conc_tipo_b} · grilla {n_grid}×{n_grid} · '
+        f'A = {n1} pts, B = {n2} pts · partición {conc_pct_train}/'
+        f'{100 - conc_pct_train}.</p>',
+        unsafe_allow_html=True,
+    )
+
+    if st.button("Generar dataset y entrenar", type="primary", key="btn_conc_run"):
+        try:
+            with st.spinner(f"Simulando {conc_n_sim} pares de patrones..."):
+                barra = st.progress(0.0, text="Generando simulaciones...")
+                df_conc = concordancia.simular_dataset_concordancia(
+                    n_sim=conc_n_sim,
+                    tipo_a=conc_tipo_a,
+                    tipo_b=conc_tipo_b,
+                    n_pts_a=n1,
+                    n_pts_b=n2,
+                    n_grid=n_grid,
+                    r_ref=r_ref,
+                    definicion_concordancia=conc_definicion,
+                    incluir_join_count=True,
+                    seed=42,
+                )
+                barra.progress(0.6, text="Entrenando red (4 variables)...")
+                res4 = concordancia.entrenar_red_concordancia(
+                    df_conc, concordancia.VARIABLES_BASE,
+                    pct_train=conc_pct_train / 100, seed=42,
+                )
+                barra.progress(0.85, text="Entrenando red (4 + Join Count)...")
+                res5 = concordancia.entrenar_red_concordancia(
+                    df_conc,
+                    concordancia.VARIABLES_BASE + [concordancia.VARIABLE_JOIN],
+                    pct_train=conc_pct_train / 100, seed=42,
+                )
+                barra.progress(1.0, text="Completado.")
+                barra.empty()
+            st.session_state["conc_dataset"] = df_conc
+            st.session_state["conc_res4"] = res4
+            st.session_state["conc_res5"] = res5
+            st.session_state["conc_incluir_join_ui"] = conc_incluir_join
+        except Exception as exc:  # noqa: BLE001
+            st.error(f"No se pudo ejecutar el análisis por simulaciones: {exc}")
+
+    if "conc_dataset" in st.session_state:
+        df_conc = st.session_state["conc_dataset"]
+        res4 = st.session_state["conc_res4"]
+        res5 = st.session_state["conc_res5"]
+
+        n1_lbl = int((df_conc["concordancia"] == 1).sum())
+        n0_lbl = int((df_conc["concordancia"] == 0).sum())
+        backend = res4.get("backend", "—")
+        backend_txt = {
+            "keras": "Keras / TensorFlow", "sklearn": "scikit-learn (fallback)",
+            "constante": "clase constante (una sola clase)",
+        }.get(backend, backend)
+
+        st.markdown('<p class="section-title">Dataset de simulaciones</p>', unsafe_allow_html=True)
+        st.markdown(
+            f'<p class="plain-text">{len(df_conc)} filas · '
+            f'concordancia = 1: {n1_lbl} · concordancia = 0: {n0_lbl} · '
+            f'backend: {backend_txt}.</p>',
+            unsafe_allow_html=True,
+        )
+        if n1_lbl == 0 or n0_lbl == 0:
+            st.warning(
+                "El dataset tiene una sola clase; ajuste tipos de patrón, "
+                "número de puntos o la definición de concordancia."
+            )
+        st.dataframe(df_conc.head(12), use_container_width=True)
+
+        st.markdown('<p class="section-title">Comparación de variables</p>', unsafe_allow_html=True)
+        df_cmp = pd.DataFrame([
+            {
+                "conjunto": "4 variables (Jaccard, Dice, MCC, Rand)",
+                "accuracy": res4["accuracy"],
+                "n_test": res4["n_test"],
+            },
+            {
+                "conjunto": "4 variables + Join Count",
+                "accuracy": res5["accuracy"],
+                "n_test": res5["n_test"],
+            },
+        ])
+        mejor_idx = int(df_cmp["accuracy"].idxmax())
+        filas_html = []
+        for idx, row in df_cmp.iterrows():
+            estilo = (
+                ' style="background:#183a2a;color:#8be0a8;font-weight:600;"'
+                if idx == mejor_idx else ""
+            )
+            filas_html.append(
+                f"<tr{estilo}><td>{row['conjunto']}</td>"
+                f"<td>{row['accuracy']:.1%}</td><td>{int(row['n_test'])}</td></tr>"
+            )
+        st.markdown(
+            '<table class="metrics-table"><thead><tr>'
+            "<th>Conjunto de variables</th><th>Accuracy</th><th>N test</th>"
+            "</tr></thead><tbody>" + "".join(filas_html) + "</tbody></table>",
+            unsafe_allow_html=True,
+        )
+        delta = res5["accuracy"] - res4["accuracy"]
+        if delta > 0.001:
+            aporte = f"Join Count mejora la accuracy en {delta:.1%}."
+        elif delta < -0.001:
+            aporte = f"Join Count reduce la accuracy en {abs(delta):.1%}."
+        else:
+            aporte = "Join Count no cambia la accuracy de forma apreciable."
+        st.markdown(f'<p class="plain-text">{aporte}</p>', unsafe_allow_html=True)
+
+        usar_join = st.session_state.get("conc_incluir_join_ui", False)
+        res_sel = res5 if usar_join else res4
+        etiqueta_sel = (
+            "4 variables + Join Count" if usar_join else "4 variables"
+        )
+        st.markdown(
+            f'<p class="section-title">Matriz de confusión — {etiqueta_sel}</p>',
+            unsafe_allow_html=True,
+        )
+        cm = metrics.matriz_confusion(
+            res_sel["y_true"], res_sel["y_pred"], [0, 1],
+        )
+        cm.index = ["real_no_concordancia", "real_concordancia"]
+        cm.columns = ["pred_no_concordancia", "pred_concordancia"]
+        st.pyplot(
+            viz.fig_matriz_confusion(cm, f"Confusión (N test = {res_sel['n_test']})"),
+            use_container_width=False,
+        )
+        st.markdown(
+            f'<p class="plain-text">Conjunto de prueba: {res_sel["n_test"]} '
+            f'simulaciones (≈{100 - conc_pct_train}% de {len(df_conc)}). '
+            f'Accuracy: {res_sel["accuracy"]:.1%}.</p>',
+            unsafe_allow_html=True,
+        )
+        if st.button("Limpiar resultados de simulaciones", key="btn_conc_limpiar"):
+            for k in ("conc_dataset", "conc_res4", "conc_res5", "conc_incluir_join_ui"):
+                st.session_state.pop(k, None)
             st.rerun()
 
 # ---------------------------------------------------------------------------
