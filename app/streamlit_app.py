@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import os
 import sys
+import time
 from datetime import datetime
 from io import BytesIO
 from typing import Optional
@@ -387,6 +388,32 @@ def _tabla_metricas_html(df: pd.DataFrame) -> str:
     )
 
 
+def _tabla_arquitecturas_html(df: pd.DataFrame) -> str:
+    """Tabla de comparación de arquitecturas; resalta en verde la mejor accuracy."""
+    rows_html = []
+    for idx, (_, row) in enumerate(df.iterrows()):
+        estilo = (
+            ' style="background:#183a2a;color:#8be0a8;font-weight:600;"'
+            if idx == 0 else ""
+        )
+        rows_html.append(
+            f"<tr{estilo}>"
+            f"<td>{row['arquitectura']}</td>"
+            f"<td>{row['accuracy']:.1%}</td>"
+            f"<td>{row['macro_f1']:.3f}</td>"
+            f"<td>{row['tiempo_s']:.2f}</td>"
+            "</tr>"
+        )
+    return (
+        '<table class="metrics-table"><thead><tr>'
+        "<th>Arquitectura</th><th>Accuracy</th><th>Macro F1</th>"
+        "<th>Tiempo (s)</th>"
+        "</tr></thead><tbody>"
+        + "".join(rows_html)
+        + "</tbody></table>"
+    )
+
+
 def _estado_app(usar_a: bool, usar_b: bool) -> str:
     if usar_a and usar_b:
         return "Modo: datos observados (patrones A y B)"
@@ -724,10 +751,19 @@ def _patron_condicionado(p1, tipo2, n2, n_coincidentes, seed2, n_grid):
     return generar_patron_condicionado(p1, tipo2, n2, n_coincidentes, seed2, n_grid=n_grid)
 
 
-def _ejecutar_entrenamiento(
-    n_sim, n_grid, r_ref, metodo_k, pct_train, capa, lr,
-    p1_fijo, p2_fijo,
-):
+# Arquitecturas fijas para la comparación (etiqueta, capas ocultas).
+ARQUITECTURAS_COMPARACION = [
+    ("1 capa · 8", (8,)),
+    ("1 capa · 16", (16,)),
+    ("2 capas · 8-8", (8, 8)),
+    ("2 capas · 16-8", (16, 8)),
+    ("3 capas · 16-8-4", (16, 8, 4)),
+    ("3 capas · 32-16-8", (32, 16, 8)),
+]
+
+
+def _preparar_datos_mlp(n_sim, n_grid, r_ref, metodo_k, pct_train, p1_fijo, p2_fijo):
+    """Genera el dataset simulado y su partición train/val/test."""
     datos = dataset.simular_dataset(
         n_sim=n_sim, n_grid=n_grid, n_pts_min=60, n_pts_max=200,
         r_ref=r_ref, metodo=metodo_k, seed=42,
@@ -735,13 +771,43 @@ def _ejecutar_entrenamiento(
     )
     if datos.empty:
         raise ValueError("No se pudo generar el dataset de entrenamiento.")
+    fracs = (pct_train / 100, (1 - pct_train / 100) / 2, (1 - pct_train / 100) / 2)
+    part = models.particion_por_sim(datos, fracs, seed=42)
+    return datos, part
+
+
+def _evaluar_arquitectura(datos, part, hidden, lr):
+    """Entrena una arquitectura y devuelve (reporte, segundos, resultado)."""
+    t0 = time.perf_counter()
+    res = models.entrenar_mlp(
+        part.train, part.val, hidden_layer_sizes=hidden,
+        learning_rate_init=lr, max_epocas=250,
+        registrar_curvas=False,
+    )
+    elapsed = time.perf_counter() - t0
+    pred = res.predecir(part.test)
+    proba = res.predecir_proba(part.test)
+    n_blancas = int(datos[datos["sim_id"].isin(
+        part.test["sim_id"].unique())]["celda_blanca"].sum())
+    rep = metrics.evaluar(
+        part.test["clase_celda"].to_numpy(), pred, proba,
+        clases=CLASES_3, n_blancas=n_blancas,
+    )
+    return rep, elapsed, res
+
+
+def _ejecutar_entrenamiento(
+    n_sim, n_grid, r_ref, metodo_k, pct_train, capa, lr,
+    p1_fijo, p2_fijo,
+):
+    datos, part = _preparar_datos_mlp(
+        n_sim, n_grid, r_ref, metodo_k, pct_train, p1_fijo, p2_fijo,
+    )
     coloreadas = dataset.filtrar_coloreadas(datos)
     if coloreadas["clase_celda"].nunique() < 2:
         st.session_state["train_warning"] = (
             "El dataset contiene una sola clase coloreada; las métricas serán limitadas."
         )
-    fracs = (pct_train / 100, (1 - pct_train / 100) / 2, (1 - pct_train / 100) / 2)
-    part = models.particion_por_sim(datos, fracs, seed=42)
     hidden = eval(capa)
     res = models.entrenar_mlp(
         part.train, part.val, hidden_layer_sizes=hidden,
@@ -1388,6 +1454,61 @@ with tab_mlp:
             '<p class="plain-text">Entrene el modelo para habilitar la exportación.</p>',
             unsafe_allow_html=True,
         )
+
+    st.markdown(
+        '<p class="section-title" style="margin-top:1.5rem;">'
+        'Comparación de arquitecturas</p>',
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        """
+        <p class="plain-text">
+        Entrena seis configuraciones fijas sobre el mismo dataset simulado y
+        las ordena por accuracy. La mejor se resalta en verde.
+        </p>
+        """,
+        unsafe_allow_html=True,
+    )
+    if st.button("Comparar arquitecturas", key="btn_comparar_arq"):
+        try:
+            datos_arq, part_arq = _preparar_datos_mlp(
+                n_sim, n_grid, r_ref, metodo_k, pct_train,
+                p1_fijo_mlp, p2_fijo_mlp,
+            )
+            barra = st.progress(0.0, text="Preparando comparación...")
+            filas = []
+            total = len(ARQUITECTURAS_COMPARACION)
+            for i, (etiqueta, hidden) in enumerate(ARQUITECTURAS_COMPARACION):
+                barra.progress(
+                    i / total,
+                    text=f"Entrenando {etiqueta} ({i + 1}/{total})...",
+                )
+                rep_i, seg_i, _ = _evaluar_arquitectura(datos_arq, part_arq, hidden, lr)
+                filas.append({
+                    "arquitectura": etiqueta,
+                    "accuracy": rep_i.accuracy,
+                    "macro_f1": rep_i.macro["f1"],
+                    "tiempo_s": seg_i,
+                })
+            barra.progress(1.0, text="Comparación completada.")
+            barra.empty()
+            df_arq = (
+                pd.DataFrame(filas)
+                .sort_values("accuracy", ascending=False)
+                .reset_index(drop=True)
+            )
+            st.session_state["comparacion_arq"] = df_arq
+        except Exception as exc:  # noqa: BLE001
+            st.error(f"No se pudo comparar arquitecturas: {exc}")
+
+    if "comparacion_arq" in st.session_state:
+        st.markdown(
+            _tabla_arquitecturas_html(st.session_state["comparacion_arq"]),
+            unsafe_allow_html=True,
+        )
+        if st.button("Limpiar comparación de arquitecturas", key="btn_limpiar_arq"):
+            del st.session_state["comparacion_arq"]
+            st.rerun()
 
 # ---------------------------------------------------------------------------
 # Tab: Referencia (teoría)
