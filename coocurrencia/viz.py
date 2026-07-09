@@ -426,6 +426,48 @@ def fig_curvas_aprendizaje(resultado, titulo="Curvas de aprendizaje"):
     return fig
 
 
+def fig_importancia_variables(
+    etiquetas,
+    valores,
+    titulo="Importancia de variables",
+    xlabel="Caída de accuracy",
+):
+    """Barras horizontales de importancia, ordenadas de mayor a menor."""
+    etiquetas = list(etiquetas)
+    valores = np.asarray(valores, dtype=float)
+    orden = np.argsort(valores)  # ascendente: mayor arriba en barh
+    etiquetas = [etiquetas[i] for i in orden]
+    valores = valores[orden]
+
+    altura = max(2.6, 0.42 * len(etiquetas) + 1.0)
+    fig, ax = plt.subplots(figsize=(5.2, altura), facecolor=BG_MAIN)
+    _estilo_ax(ax, titulo=titulo)
+
+    y = np.arange(len(etiquetas))
+    vmax = float(valores.max()) if len(valores) else 0.0
+    colores = [
+        POSITIVE if (vmax > 0 and v >= vmax - 1e-12) else ACCENT
+        for v in valores
+    ]
+    ax.barh(y, valores, color=colores, edgecolor=BORDER, linewidth=0.6, zorder=3)
+    ax.set_yticks(y)
+    ax.set_yticklabels(etiquetas, fontsize=8, color=TEXT_PRIMARY)
+    ax.axvline(0.0, color=CSR_GRAY, lw=0.8, alpha=0.6, zorder=2)
+
+    span = vmax - float(valores.min()) if len(valores) else 0.0
+    desplazamiento = (abs(vmax) + span) * 0.01 + 1e-4
+    for yi, v in zip(y, valores):
+        ax.text(
+            v + desplazamiento, yi, f"{v:.3f}",
+            va="center", ha="left", fontsize=7, color=TEXT_SECONDARY,
+        )
+
+    ax.set_xlabel(xlabel)
+    ax.grid(axis="x", color=GRID_LINE, lw=0.4, alpha=0.5)
+    fig.subplots_adjust(left=0.30, right=0.94, top=0.90, bottom=0.16)
+    return fig
+
+
 def fig_matriz_confusion(cm: pd.DataFrame, titulo="Matriz de confusión"):
     """Heatmap académico con conteos absolutos y porcentajes por fila."""
     fig, ax = plt.subplots(figsize=(4.2, 3.6), facecolor=BG_MAIN)

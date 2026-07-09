@@ -24,7 +24,7 @@ import streamlit as st
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from coocurrencia import (  # noqa: E402
-    CLASES_2, CLASES_3, dataset, metrics, models, ripley, viz,
+    CLASES_2, CLASES_3, dataset, importance, metrics, models, ripley, viz,
 )
 from coocurrencia.patterns import (  # noqa: E402
     contar_coincidencias, generar_patron, generar_patron_condicionado,
@@ -386,6 +386,53 @@ def _tabla_metricas_html(df: pd.DataFrame) -> str:
         + "".join(rows_html)
         + "</tbody></table>"
     )
+
+
+# Etiquetas legibles de las variables de entrada del modelo.
+_ETIQUETAS_FEATURES = {
+    "k1_n": "K₁ (Patrón A)",
+    "k2_n": "K₂ (Patrón B)",
+    "k12_n": "K₁₂ (cruzada)",
+    "cls1_f": "Clase A",
+    "cls2_f": "Clase B",
+    "ocupa_p1": "Ocupación A",
+    "ocupa_p2": "Ocupación B",
+}
+
+_INTERPRETACION_FEATURES = {
+    "k1_n": (
+        "la estructura espacial del Patrón A (agrupamiento o dispersión medido "
+        "por K₁) es lo que más condiciona la predicción de coocurrencia"
+    ),
+    "k2_n": (
+        "la estructura espacial del Patrón B (K₂) es la señal dominante para "
+        "clasificar las celdas"
+    ),
+    "k12_n": (
+        "la K de Ripley cruzada K₁₂ —la asociación espacial directa entre A y "
+        "B— es la variable más determinante, coherente con el objetivo de "
+        "detectar coocurrencia"
+    ),
+    "cls1_f": (
+        "la clasificación del Patrón A (agrupado/disperso/aleatorio) es el "
+        "factor más influyente"
+    ),
+    "cls2_f": (
+        "la clasificación del Patrón B es el factor más influyente"
+    ),
+    "ocupa_p1": (
+        "la presencia local del Patrón A en la celda es lo que más pesa en la "
+        "decisión del modelo"
+    ),
+    "ocupa_p2": (
+        "la presencia local del Patrón B en la celda es lo que más pesa en la "
+        "decisión del modelo"
+    ),
+}
+
+
+def _etiqueta_feature(nombre: str) -> str:
+    return _ETIQUETAS_FEATURES.get(nombre, nombre)
 
 
 def _tabla_arquitecturas_html(df: pd.DataFrame) -> str:
@@ -823,10 +870,12 @@ def _ejecutar_entrenamiento(
     )
     st.session_state["rep"] = rep
     st.session_state["res"] = res
+    st.session_state["test_df"] = part.test
     st.session_state["datos_info"] = {
         "n_train": len(part.train), "n_test": len(part.test),
         "esquema": part.esquema,
     }
+    st.session_state.pop("importancia_vars", None)
 
 
 # ---------------------------------------------------------------------------
@@ -1433,6 +1482,58 @@ with tab_mlp:
             f'prueba: {info["n_test"]} celdas</p>',
             unsafe_allow_html=True,
         )
+
+        st.markdown(
+            '<p class="section-title">Importancia de variables</p>',
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            """
+            <p class="plain-text">
+            Importancia por permutación: cada variable de entrada se baraja
+            aleatoriamente en el conjunto de prueba y se mide la caída de
+            accuracy respecto al modelo intacto. Mayor caída = variable más
+            influyente.
+            </p>
+            """,
+            unsafe_allow_html=True,
+        )
+        if st.button("Calcular importancia de variables", key="btn_importancia"):
+            if "test_df" not in st.session_state:
+                st.warning("Vuelva a entrenar el modelo para calcular la importancia.")
+            else:
+                with st.spinner("Permutando variables..."):
+                    tabla_imp = importance.permutation_importance(
+                        st.session_state["res"],
+                        st.session_state["test_df"],
+                        n_repeticiones=20,
+                        seed=42,
+                    )
+                st.session_state["importancia_vars"] = tabla_imp
+
+        if "importancia_vars" in st.session_state:
+            tabla_imp = st.session_state["importancia_vars"]
+            etiquetas = [_etiqueta_feature(v) for v in tabla_imp["variable"]]
+            st.pyplot(
+                viz.fig_importancia_variables(
+                    etiquetas,
+                    tabla_imp["importancia_media"].to_numpy(),
+                    "Importancia por permutación",
+                ),
+                use_container_width=False,
+            )
+            top_var = tabla_imp.iloc[0]["variable"]
+            top_val = float(tabla_imp.iloc[0]["importancia_media"])
+            interp = _INTERPRETACION_FEATURES.get(
+                top_var, "esta variable es la más determinante para el modelo"
+            )
+            st.markdown(
+                f'<p class="plain-text">La variable más influyente es '
+                f'<strong>{_etiqueta_feature(top_var)}</strong> '
+                f'(caída de accuracy de {top_val:.3f} al permutarla). '
+                f'En términos de la K de Ripley, esto indica que {interp}.</p>',
+                unsafe_allow_html=True,
+            )
 
         parametros_export = parametros_actuales.copy()
         if info:
