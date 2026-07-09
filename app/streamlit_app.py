@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import os
 import sys
+from datetime import datetime
+from io import BytesIO
 from typing import Optional
 
 import numpy as np
@@ -410,6 +412,81 @@ def _etiqueta_clase(cls: str) -> str:
         "atraccion": "Atracción", "repulsion": "Repulsión",
         "sin_coocurrencia": "Independencia",
     }.get(str(cls).lower(), str(cls).capitalize())
+
+
+def _generar_excel_analisis(
+    parametros: dict,
+    rep: metrics.ReporteClasificacion,
+    resumen_k: dataset.ResumenPar,
+    r_ref: float,
+    metodo_k: str,
+) -> tuple[bytes, str]:
+    """Genera un libro Excel con parámetros, métricas, matrices y valores K."""
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"ripley_analisis_{timestamp}.xlsx"
+    buffer = BytesIO()
+
+    df_params = pd.DataFrame(
+        [{"Parámetro": nombre, "Valor": valor} for nombre, valor in parametros.items()]
+    )
+
+    df_globales = pd.DataFrame([
+        {"métrica": "accuracy", "valor": round(rep.accuracy, 4)},
+        {"métrica": "macro_F1", "valor": round(rep.macro["f1"], 4)},
+        {"métrica": "macro_precisión", "valor": round(rep.macro["precision"], 4)},
+        {"métrica": "macro_recall", "valor": round(rep.macro["recall"], 4)},
+        {"métrica": "weighted_F1", "valor": round(rep.weighted["f1"], 4)},
+        {"métrica": "celdas_evaluadas", "valor": rep.n_evaluadas},
+        {"métrica": "celdas_blancas_excluidas", "valor": rep.n_blancas or 0},
+    ])
+    df_por_clase = (
+        rep.por_clase.reset_index()
+        .rename(columns={"index": "clase", "precision": "precisión"})
+        .round(4)
+    )
+
+    df_k_contexto = pd.DataFrame([
+        {"parámetro": "radio_referencia_r", "valor": r_ref},
+        {"parámetro": "criterio_clasificación", "valor": metodo_k},
+        {"parámetro": "referencia_CSR_πr²", "valor": round(np.pi * r_ref**2, 6)},
+    ])
+    df_k = pd.DataFrame([
+        {
+            "función": "K₁ (Patrón A)",
+            "valor_en_r_ref": round(resumen_k.k1_val, 6),
+            "clasificación": _etiqueta_clase(resumen_k.cls1),
+        },
+        {
+            "función": "K₂ (Patrón B)",
+            "valor_en_r_ref": round(resumen_k.k2_val, 6),
+            "clasificación": _etiqueta_clase(resumen_k.cls2),
+        },
+        {
+            "función": "K₁₂ (cruzada)",
+            "valor_en_r_ref": round(resumen_k.k12_val, 6),
+            "clasificación": _etiqueta_clase(resumen_k.clase_biv),
+        },
+    ])
+
+    with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+        df_params.to_excel(writer, sheet_name="Parámetros", index=False)
+
+        df_globales.to_excel(writer, sheet_name="Métricas", index=False, startrow=0)
+        df_por_clase.to_excel(
+            writer, sheet_name="Métricas", index=False,
+            startrow=len(df_globales) + 2,
+        )
+
+        if rep.matriz_3x3 is not None:
+            rep.matriz_3x3.to_excel(writer, sheet_name="Matriz 3x3")
+        if rep.matriz_2x2 is not None:
+            rep.matriz_2x2.to_excel(writer, sheet_name="Matriz 2x2")
+
+        df_k_contexto.to_excel(writer, sheet_name="Valores K", index=False, startrow=0)
+        df_k.to_excel(writer, sheet_name="Valores K", index=False, startrow=len(df_k_contexto) + 2)
+
+    buffer.seek(0)
+    return buffer.getvalue(), filename
 
 
 # ---------------------------------------------------------------------------
@@ -1069,6 +1146,51 @@ with tab_mlp:
             f'<p class="plain-text">Partición {info["esquema"]} — '
             f'entrenamiento: {info["n_train"]} celdas · '
             f'prueba: {info["n_test"]} celdas</p>',
+            unsafe_allow_html=True,
+        )
+
+        parametros_export = {
+            "Tamaño de grilla (N × N)": n_grid,
+            "Patrón A — fuente": (
+                "datos observados" if usar_datos_propios_a else "simulado"
+            ),
+            "Patrón A — distribución": (
+                tipo1 if not usar_datos_propios_a else "N/A (datos observados)"
+            ),
+            "Patrón A — puntos": len(p1),
+            "Patrón A — semilla": seed1 if not usar_datos_propios_a else "N/A",
+            "Patrón B — fuente": (
+                "datos observados" if usar_datos_propios_b else "simulado"
+            ),
+            "Patrón B — distribución": (
+                tipo2 if not usar_datos_propios_b else "N/A (datos observados)"
+            ),
+            "Patrón B — puntos": len(p2),
+            "Patrón B — celdas coincidentes": n_coincidentes,
+            "Patrón B — semilla": seed2 if not usar_datos_propios_b else "N/A",
+            "Radio de referencia r": r_ref,
+            "Criterio K": metodo_k,
+            "Simulaciones Monte Carlo": n_sim,
+            "Proporción entrenamiento (%)": pct_train,
+            "Arquitectura oculta": capa,
+            "Tasa de aprendizaje": lr,
+            "Partición entrenamiento (celdas)": info["n_train"],
+            "Partición prueba (celdas)": info["n_test"],
+            "Esquema de partición": info["esquema"],
+        }
+        excel_bytes, excel_nombre = _generar_excel_analisis(
+            parametros_export, rep, resumen, r_ref, metodo_k,
+        )
+        st.download_button(
+            "Exportar análisis",
+            data=excel_bytes,
+            file_name=excel_nombre,
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            key="exportar_analisis",
+        )
+    else:
+        st.markdown(
+            '<p class="plain-text">Entrene el modelo para habilitar la exportación.</p>',
             unsafe_allow_html=True,
         )
 
