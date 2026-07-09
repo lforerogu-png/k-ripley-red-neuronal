@@ -271,6 +271,45 @@ def fig_curva_l(
     return fig
 
 
+_COLORES_DIRECCION = {
+    0: ACCENT,
+    45: WARNING,
+    90: POSITIVE,
+    135: "#ce93d8",
+}
+
+
+def fig_k_direccional(
+    curvas: dict,
+    titulo: str,
+    etiquetas: Optional[dict] = None,
+    r_ref: float = 0.2,
+):
+    """Varias curvas K direccionales con referencia CSR en un solo panel."""
+    fig, ax = plt.subplots(figsize=(5.2, 3.6), facecolor=BG_MAIN)
+    _estilo_ax(ax, titulo=titulo)
+
+    primera = next(iter(curvas.values()))
+    ax.plot(
+        primera.r, primera.k_teorica, "--",
+        color=CSR_GRAY, lw=1.2, label="CSR (πr²)", zorder=2,
+    )
+    for angulo, res in curvas.items():
+        color = _COLORES_DIRECCION.get(angulo, ACCENT_LIGHT)
+        if etiquetas and angulo in etiquetas:
+            etiqueta = etiquetas[angulo]
+        else:
+            etiqueta = f"{angulo}°"
+        ax.plot(res.r, res.k, color=color, lw=1.8, label=etiqueta, zorder=3)
+
+    ax.axvline(r_ref, color=CSR_GRAY, ls=":", lw=1, alpha=0.7, zorder=2)
+    ax.set_xlabel("Radio r")
+    ax.set_ylabel("K(r)")
+    ax.legend(fontsize=7, loc="lower right", framealpha=0.85)
+    fig.subplots_adjust(left=0.14, right=0.96, top=0.88, bottom=0.18)
+    return fig
+
+
 def fig_curvas_aprendizaje(resultado, titulo="Curvas de aprendizaje"):
     """Curvas de pérdida train/val con sombreado de sobreajuste."""
     fig, ax = plt.subplots(figsize=(4.5, 3.2), facecolor=BG_MAIN)

@@ -241,6 +241,111 @@ def k_univariada(
     return ResultadoK(r=r, k=k, k_teorica=np.pi * r**2)
 
 
+# Direcciones estándar para el análisis de anisotropía (grados desde el eje x).
+DIRECCIONES_ANISOTROPIA: tuple[int, ...] = (0, 45, 90, 135)
+ETIQUETAS_DIRECCION: dict[int, str] = {
+    0: "0° (horizontal)",
+    45: "45° (diagonal)",
+    90: "90° (vertical)",
+    135: "135° (diagonal inversa)",
+}
+
+
+def _en_sector_angular(
+    angulos: np.ndarray, centro_grados: float, tolerancia_grados: float
+) -> np.ndarray:
+    """Máscara booleana: ángulos (rad) dentro del sector angular."""
+    centro = np.deg2rad(centro_grados)
+    tol = np.deg2rad(tolerancia_grados)
+    diff = np.angle(np.exp(1j * (angulos - centro)))
+    return np.abs(diff) <= tol
+
+
+def k_direccional(
+    puntos_xy: np.ndarray,
+    angulo_grados: float,
+    tolerancia_grados: float = 22.5,
+    ventana: tuple[float, float, float, float] = (0.0, 1.0, 0.0, 1.0),
+    rmax: Optional[float] = None,
+    n_r: int = 128,
+) -> ResultadoK:
+    """K de Ripley univariada restringida a un sector angular.
+
+    Solo cuenta pares cuya dirección (de :math:`i` hacia :math:`j`) cae
+    dentro de ``[angulo_grados ± tolerancia_grados]``. El estimador se
+    escala por el ancho del sector para que, bajo CSR isotrópico, cada
+    curva direccional coincida con la referencia :math:`\\pi r^2`.
+    """
+    xmin, xmax, ymin, ymax = ventana
+    area = (xmax - xmin) * (ymax - ymin)
+    if rmax is None:
+        rmax = rmax_por_defecto(area)
+    r = _malla_radios(rmax, n_r)
+
+    pts = np.asarray(puntos_xy, dtype=float)
+    n = len(pts)
+    if n < 2:
+        return ResultadoK(r=r, k=np.full_like(r, np.nan), k_teorica=np.pi * r**2)
+
+    d = _matriz_distancias(pts)
+    xi = np.repeat(pts[:, 0][:, None], n, axis=1)
+    yi = np.repeat(pts[:, 1][:, None], n, axis=1)
+    w = fraccion_circulo_dentro(xi, yi, d, ventana)
+    e = 1.0 / w
+
+    dx = pts[None, :, 0] - pts[:, 0][:, None]
+    dy = pts[None, :, 1] - pts[:, 1][:, None]
+    angulos = np.arctan2(dy, dx)
+    sector = _en_sector_angular(angulos, angulo_grados, tolerancia_grados)
+    np.fill_diagonal(sector, False)
+    np.fill_diagonal(d, np.inf)
+
+    e_dir = np.where(sector, e, 0.0)
+    ancho_sector = 2.0 * tolerancia_grados / 360.0
+    factor = area / (n * (n - 1)) / ancho_sector
+    k = _acumular_por_radio(d.ravel(), e_dir.ravel(), r) * factor
+    return ResultadoK(r=r, k=k, k_teorica=np.pi * r**2)
+
+
+def k_anisotropia(
+    puntos_xy: np.ndarray,
+    direcciones: tuple[int, ...] = DIRECCIONES_ANISOTROPIA,
+    tolerancia_grados: float = 22.5,
+    ventana: tuple[float, float, float, float] = (0.0, 1.0, 0.0, 1.0),
+    rmax: Optional[float] = None,
+    n_r: int = 128,
+) -> dict[int, ResultadoK]:
+    """Calcula K direccional en varias orientaciones para análisis de anisotropía."""
+    return {
+        ang: k_direccional(
+            puntos_xy, ang, tolerancia_grados,
+            ventana=ventana, rmax=rmax, n_r=n_r,
+        )
+        for ang in direcciones
+    }
+
+
+def clasificar_anisotropia(
+    curvas: dict[int, ResultadoK],
+    r_ref: float = 0.2,
+    umbral: float = 0.20,
+) -> tuple[str, float]:
+    """Clasifica isotropía comparando las curvas direccionales en ``r_ref``.
+
+    Si la diferencia relativa ``(max - min) / (π r_ref²)`` supera ``umbral``
+    (20 % por defecto), el patrón se considera anisotrópico.
+    """
+    if not curvas:
+        return "Patrón isotrópico", 0.0
+    valores = [res.valor_en(r_ref) for res in curvas.values()]
+    k_teo = np.pi * r_ref**2
+    if k_teo <= 0:
+        return "Patrón isotrópico", 0.0
+    diff_rel = (max(valores) - min(valores)) / k_teo
+    etiqueta = "Patrón anisotrópico" if diff_rel > umbral else "Patrón isotrópico"
+    return etiqueta, float(diff_rel)
+
+
 def k_cruzada(
     a_xy: np.ndarray,
     b_xy: np.ndarray,

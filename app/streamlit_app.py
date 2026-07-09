@@ -752,9 +752,10 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-tab_pat, tab_k, tab_grilla, tab_mlp, tab_teoria = st.tabs([
+tab_pat, tab_k, tab_aniso, tab_grilla, tab_mlp, tab_teoria = st.tabs([
     "Patrones",
     "Funciones K",
+    "Anisotropía",
     "Grilla",
     "Modelo",
     "Referencia",
@@ -872,6 +873,78 @@ with tab_k:
         <strong>K &gt; πr²</strong> / <strong>L &gt; 0</strong> — agrupamiento o atracción &nbsp;·&nbsp;
         <strong>K ≈ πr²</strong> / <strong>L ≈ 0</strong> — aleatoriedad (CSR) o independencia &nbsp;·&nbsp;
         <strong>K &lt; πr²</strong> / <strong>L &lt; 0</strong> — dispersión o repulsión
+        </p>
+        """,
+        unsafe_allow_html=True,
+    )
+
+# ---------------------------------------------------------------------------
+# Tab: Anisotropía
+# ---------------------------------------------------------------------------
+with tab_aniso:
+    st.markdown(
+        """
+        <p class="plain-text">
+        La K de Ripley asume isotropía espacial: la distribución de vecinos
+        es igual en todas las direcciones. Si el patrón presenta estructura
+        alineada (filas, gradientes, bordes), las curvas K direccionales
+        divergen y el patrón es <strong>anisotrópico</strong>.
+        </p>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    curvas_a = ripley.k_anisotropia(p1[["x", "y"]].to_numpy())
+    curvas_b = ripley.k_anisotropia(p2[["x", "y"]].to_numpy())
+    cls_iso_a, diff_a = ripley.clasificar_anisotropia(curvas_a, r_ref=r_ref)
+    cls_iso_b, diff_b = ripley.clasificar_anisotropia(curvas_b, r_ref=r_ref)
+
+    if usar_datos_propios_a and puntos_subidos_a is not None:
+        titulo_aniso_a = f"Patrón A — datos observados ({len(p1)} pts)"
+    else:
+        titulo_aniso_a = f"Patrón A — {tipo1}"
+    if usar_datos_propios_b and puntos_subidos_b is not None:
+        titulo_aniso_b = f"Patrón B — datos observados ({len(p2)} pts)"
+    else:
+        titulo_aniso_b = f"Patrón B — {tipo2}"
+
+    c1, c2 = st.columns(2)
+    with c1:
+        st.pyplot(
+            viz.fig_k_direccional(
+                curvas_a, f"K direccional — {titulo_aniso_a}",
+                etiquetas=ripley.ETIQUETAS_DIRECCION, r_ref=r_ref,
+            ),
+            use_container_width=True,
+        )
+        st.markdown(
+            f'<p class="plain-text"><strong>{cls_iso_a}</strong>'
+            f' &nbsp;·&nbsp; Diferencia relativa en r = {r_ref}: {diff_a:.1%}'
+            f' (umbral 20%)</p>',
+            unsafe_allow_html=True,
+        )
+    with c2:
+        st.pyplot(
+            viz.fig_k_direccional(
+                curvas_b, f"K direccional — {titulo_aniso_b}",
+                etiquetas=ripley.ETIQUETAS_DIRECCION, r_ref=r_ref,
+            ),
+            use_container_width=True,
+        )
+        st.markdown(
+            f'<p class="plain-text"><strong>{cls_iso_b}</strong>'
+            f' &nbsp;·&nbsp; Diferencia relativa en r = {r_ref}: {diff_b:.1%}'
+            f' (umbral 20%)</p>',
+            unsafe_allow_html=True,
+        )
+
+    st.markdown(
+        """
+        <p class="plain-text" style="margin-top:0.75rem;">
+        Tolerancia angular: ±22.5° &nbsp;·&nbsp;
+        Si las cuatro curvas coinciden, el patrón es isotrópico;
+        si difieren más de un 20% respecto a πr² en el radio de referencia,
+        se considera anisotrópico.
         </p>
         """,
         unsafe_allow_html=True,
