@@ -489,6 +489,147 @@ def _generar_excel_analisis(
     return buffer.getvalue(), filename
 
 
+def _parametros_analisis(
+    *,
+    n_grid: int,
+    usar_datos_propios_a: bool,
+    usar_datos_propios_b: bool,
+    tipo1: str,
+    n1: int,
+    seed1: int,
+    len_p1: int,
+    tipo2: str,
+    n2: int,
+    n_coincidentes: int,
+    seed2: int,
+    len_p2: int,
+    r_ref: float,
+    metodo_k: str,
+    n_sim: int,
+    pct_train: int,
+    capa: str,
+    lr: float,
+    info: Optional[dict] = None,
+) -> dict:
+    """Construye el diccionario de parámetros del análisis actual."""
+    params = {
+        "Tamaño de grilla (N × N)": n_grid,
+        "Patrón A — fuente": (
+            "datos observados" if usar_datos_propios_a else "simulado"
+        ),
+        "Patrón A — distribución": (
+            tipo1 if not usar_datos_propios_a else "N/A (datos observados)"
+        ),
+        "Patrón A — puntos": len_p1,
+        "Patrón A — semilla": seed1 if not usar_datos_propios_a else "N/A",
+        "Patrón B — fuente": (
+            "datos observados" if usar_datos_propios_b else "simulado"
+        ),
+        "Patrón B — distribución": (
+            tipo2 if not usar_datos_propios_b else "N/A (datos observados)"
+        ),
+        "Patrón B — puntos": len_p2,
+        "Patrón B — celdas coincidentes": n_coincidentes,
+        "Patrón B — semilla": seed2 if not usar_datos_propios_b else "N/A",
+        "Radio de referencia r": r_ref,
+        "Criterio K": metodo_k,
+        "Simulaciones Monte Carlo": n_sim,
+        "Proporción entrenamiento (%)": pct_train,
+        "Arquitectura oculta": capa,
+        "Tasa de aprendizaje": lr,
+    }
+    if info:
+        params["Partición entrenamiento (celdas)"] = info["n_train"]
+        params["Partición prueba (celdas)"] = info["n_test"]
+        params["Esquema de partición"] = info["esquema"]
+    return params
+
+
+def _snapshot_analisis(
+    parametros: dict,
+    resumen_k: dataset.ResumenPar,
+    rep: Optional[metrics.ReporteClasificacion] = None,
+) -> dict:
+    """Instantánea serializable del análisis (parámetros, K y métricas)."""
+    snapshot = {
+        "guardado_en": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "parametros": parametros,
+        "k": {
+            "k1_val": round(resumen_k.k1_val, 6),
+            "k2_val": round(resumen_k.k2_val, 6),
+            "k12_val": round(resumen_k.k12_val, 6),
+            "cls1": resumen_k.cls1,
+            "cls2": resumen_k.cls2,
+            "clase_biv": resumen_k.clase_biv,
+            "cls1_etiqueta": _etiqueta_clase(resumen_k.cls1),
+            "cls2_etiqueta": _etiqueta_clase(resumen_k.cls2),
+            "clase_biv_etiqueta": _etiqueta_clase(resumen_k.clase_biv),
+        },
+        "metricas": None,
+    }
+    if rep is not None:
+        snapshot["metricas"] = {
+            "accuracy": round(rep.accuracy, 4),
+            "macro_f1": round(rep.macro["f1"], 4),
+            "macro_precision": round(rep.macro["precision"], 4),
+            "macro_recall": round(rep.macro["recall"], 4),
+            "weighted_f1": round(rep.weighted["f1"], 4),
+            "n_evaluadas": rep.n_evaluadas,
+            "n_blancas": rep.n_blancas or 0,
+        }
+    return snapshot
+
+
+def _filas_comparacion(snapshot: dict) -> list[tuple[str, str]]:
+    """Filas (métrica, valor) para la tabla de comparación."""
+    p = snapshot["parametros"]
+    k = snapshot["k"]
+    m = snapshot.get("metricas") or {}
+    filas = [
+        ("Grilla (N × N)", str(p.get("Tamaño de grilla (N × N)", "—"))),
+        ("Patrón A", f"{p.get('Patrón A — distribución', '—')} · {p.get('Patrón A — puntos', '—')} pts"),
+        ("Patrón B", f"{p.get('Patrón B — distribución', '—')} · {p.get('Patrón B — puntos', '—')} pts"),
+        ("Radio r", f"{p.get('Radio de referencia r', '—')}"),
+        ("Criterio K", str(p.get("Criterio K", "—"))),
+        ("K₁ (A)", f"{k['k1_val']:.4f} · {k['cls1_etiqueta']}"),
+        ("K₂ (B)", f"{k['k2_val']:.4f} · {k['cls2_etiqueta']}"),
+        ("K₁₂", f"{k['k12_val']:.4f} · {k['clase_biv_etiqueta']}"),
+    ]
+    if m:
+        filas.extend([
+            ("Accuracy", f"{m['accuracy']:.1%}"),
+            ("Macro F1", f"{m['macro_f1']:.3f}"),
+            ("Macro precisión", f"{m['macro_precision']:.3f}"),
+            ("Macro recall", f"{m['macro_recall']:.3f}"),
+            ("Simulaciones", str(p.get("Simulaciones Monte Carlo", "—"))),
+            ("Arquitectura", str(p.get("Arquitectura oculta", "—"))),
+        ])
+    else:
+        filas.append(("Modelo MLP", "Sin entrenar"))
+    return filas
+
+
+def _tabla_comparacion_html(guardado: dict, actual: dict) -> str:
+    """Tabla lado a lado: análisis guardado vs análisis actual."""
+    mapa_g = dict(_filas_comparacion(guardado))
+    mapa_a = dict(_filas_comparacion(actual))
+    metricas = [m for m, _ in _filas_comparacion(guardado)]
+    rows = []
+    for metrica in metricas:
+        vg = mapa_g.get(metrica, "—")
+        va = mapa_a.get(metrica, "—")
+        rows.append(
+            f"<tr><td>{metrica}</td><td>{vg}</td><td>{va}</td></tr>"
+        )
+    return (
+        '<table class="metrics-table"><thead><tr>'
+        "<th>Métrica</th><th>Análisis guardado</th><th>Análisis actual</th>"
+        "</tr></thead><tbody>"
+        + "".join(rows)
+        + "</tbody></table>"
+    )
+
+
 # ---------------------------------------------------------------------------
 # Datos: CSV y patrones cacheados
 # ---------------------------------------------------------------------------
@@ -812,6 +953,40 @@ if entrenar_click:
         except Exception as exc:  # noqa: BLE001
             st.session_state["train_error"] = str(exc)
 
+parametros_actuales = _parametros_analisis(
+    n_grid=n_grid,
+    usar_datos_propios_a=usar_datos_propios_a,
+    usar_datos_propios_b=usar_datos_propios_b,
+    tipo1=tipo1,
+    n1=n1,
+    seed1=seed1,
+    len_p1=len(p1),
+    tipo2=tipo2,
+    n2=n2,
+    n_coincidentes=n_coincidentes,
+    seed2=seed2,
+    len_p2=len(p2),
+    r_ref=r_ref,
+    metodo_k=metodo_k,
+    n_sim=n_sim,
+    pct_train=pct_train,
+    capa=capa,
+    lr=lr,
+    info=st.session_state.get("datos_info"),
+)
+snapshot_actual = _snapshot_analisis(
+    parametros_actuales,
+    resumen,
+    st.session_state.get("rep"),
+)
+
+st.sidebar.markdown("<div style='margin-top:1rem'></div>", unsafe_allow_html=True)
+if st.sidebar.button("Guardar análisis actual", key="btn_guardar_analisis"):
+    st.session_state["analisis_guardado"] = snapshot_actual
+if st.session_state.get("analisis_guardado"):
+    guardado_en = st.session_state["analisis_guardado"]["guardado_en"]
+    st.sidebar.caption(f"Referencia guardada: {guardado_en}")
+
 # ---------------------------------------------------------------------------
 # Header
 # ---------------------------------------------------------------------------
@@ -1126,6 +1301,25 @@ with tab_mlp:
     if st.session_state.get("train_warning"):
         st.warning(st.session_state.pop("train_warning"))
 
+    if st.session_state.get("analisis_guardado"):
+        guardado = st.session_state["analisis_guardado"]
+        st.markdown(
+            '<p class="section-title">Comparación de análisis</p>',
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            f'<p class="plain-text">Referencia guardada el '
+            f'<strong>{guardado["guardado_en"]}</strong> vs configuración actual.</p>',
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            _tabla_comparacion_html(guardado, snapshot_actual),
+            unsafe_allow_html=True,
+        )
+        if st.button("Limpiar comparación", key="btn_limpiar_comparacion"):
+            del st.session_state["analisis_guardado"]
+            st.rerun()
+
     if "rep" in st.session_state:
         rep = st.session_state["rep"]
         info = st.session_state["datos_info"]
@@ -1174,35 +1368,11 @@ with tab_mlp:
             unsafe_allow_html=True,
         )
 
-        parametros_export = {
-            "Tamaño de grilla (N × N)": n_grid,
-            "Patrón A — fuente": (
-                "datos observados" if usar_datos_propios_a else "simulado"
-            ),
-            "Patrón A — distribución": (
-                tipo1 if not usar_datos_propios_a else "N/A (datos observados)"
-            ),
-            "Patrón A — puntos": len(p1),
-            "Patrón A — semilla": seed1 if not usar_datos_propios_a else "N/A",
-            "Patrón B — fuente": (
-                "datos observados" if usar_datos_propios_b else "simulado"
-            ),
-            "Patrón B — distribución": (
-                tipo2 if not usar_datos_propios_b else "N/A (datos observados)"
-            ),
-            "Patrón B — puntos": len(p2),
-            "Patrón B — celdas coincidentes": n_coincidentes,
-            "Patrón B — semilla": seed2 if not usar_datos_propios_b else "N/A",
-            "Radio de referencia r": r_ref,
-            "Criterio K": metodo_k,
-            "Simulaciones Monte Carlo": n_sim,
-            "Proporción entrenamiento (%)": pct_train,
-            "Arquitectura oculta": capa,
-            "Tasa de aprendizaje": lr,
-            "Partición entrenamiento (celdas)": info["n_train"],
-            "Partición prueba (celdas)": info["n_test"],
-            "Esquema de partición": info["esquema"],
-        }
+        parametros_export = parametros_actuales.copy()
+        if info:
+            parametros_export.setdefault("Partición entrenamiento (celdas)", info["n_train"])
+            parametros_export.setdefault("Partición prueba (celdas)", info["n_test"])
+            parametros_export.setdefault("Esquema de partición", info["esquema"])
         excel_bytes, excel_nombre = _generar_excel_analisis(
             parametros_export, rep, resumen, r_ref, metodo_k,
         )
