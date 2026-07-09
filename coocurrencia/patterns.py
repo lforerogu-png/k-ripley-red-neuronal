@@ -60,6 +60,42 @@ def _añadir_coords(puntos: pd.DataFrame, n_grid: int) -> pd.DataFrame:
     return puntos
 
 
+def _completar_hasta(
+    puntos: pd.DataFrame,
+    celdas: pd.DataFrame,
+    n_objetivo: int,
+    rng: np.random.Generator,
+) -> pd.DataFrame:
+    """Rellena ``puntos`` con celdas libres aleatorias hasta ``n_objetivo``.
+
+    Los generadores de ``agrupado`` y ``disperso`` imponen restricciones
+    geométricas (radio de clúster, distancia mínima) que son fijas en número
+    de celdas y **no escalan** con ``n_grid``. Para grillas grandes eso puede
+    dejar el resultado muy por debajo del máximo teórico disponible
+    (``min(n_puntos, n_grid**2)``). Esta función garantiza alcanzar ese
+    máximo añadiendo celdas libres restantes sin más restricción que no
+    repetir celdas ya usadas.
+    """
+    faltan = n_objetivo - len(puntos)
+    if faltan <= 0 or len(celdas) == 0:
+        return puntos
+    usados = set(zip(puntos["col"], puntos["row"])) if len(puntos) else set()
+    mask = [
+        (c, r) not in usados for c, r in zip(celdas["col"], celdas["row"])
+    ]
+    libres = celdas.loc[mask]
+    if len(libres) == 0:
+        return puntos
+    n_take = min(faltan, len(libres))
+    idx = rng.choice(len(libres), size=n_take, replace=False)
+    extra = libres.iloc[idx][["col", "row"]]
+    if len(puntos) == 0:
+        return extra.reset_index(drop=True)
+    return pd.concat(
+        [puntos[["col", "row"]], extra], ignore_index=True
+    ).reset_index(drop=True)
+
+
 def generar_patron(
     tipo: str,
     n_puntos: int = 60,
@@ -67,9 +103,9 @@ def generar_patron(
     *,
     n_grid: int = 30,
     celdas_ocupadas: Optional[pd.DataFrame] = None,
-    radio_cluster: int = 6,
+    radio_cluster: Optional[int] = None,
     n_clusters: int = 4,
-    dist_min_disperso: float = 3.0,
+    dist_min_disperso: Optional[float] = None,
 ) -> pd.DataFrame:
     """Genera un patrón de puntos sobre la grilla.
 
@@ -79,7 +115,9 @@ def generar_patron(
         ``"agrupado"`` (varios clústeres), ``"disperso"`` (inhibición por
         distancia mínima) o ``"aleatorio"`` (CSR: muestreo uniforme de celdas).
     n_puntos:
-        Número de puntos deseado (1..500). No se limita a 150.
+        Número de puntos deseado. El resultado siempre alcanza
+        ``min(n_puntos, celdas_disponibles)`` (celdas disponibles = ``n_grid**2``
+        menos las ya ocupadas), independientemente de ``n_grid``.
     seed:
         Semilla del generador ``numpy.random.default_rng``.
     n_grid:
@@ -89,16 +127,20 @@ def generar_patron(
         al generar los puntos "libres" del patrón B.
     radio_cluster:
         Radio (en celdas) de dispersión alrededor de cada centro de clúster.
+        Si es ``None`` (default), se escala con ``n_grid`` para que la
+        restricción geométrica no limite artificialmente el máximo de puntos
+        alcanzable en grillas grandes.
     n_clusters:
         Número de clústeres para el tipo ``"agrupado"``.
     dist_min_disperso:
         Distancia mínima (en celdas) entre puntos para el tipo ``"disperso"``.
+        Si es ``None`` (default), se escala con ``n_grid``.
 
     Returns
     -------
     pandas.DataFrame
-        Columnas ``col``, ``row``, ``x``, ``y``. Puede tener menos de
-        ``n_puntos`` filas si el espacio disponible no lo permite.
+        Columnas ``col``, ``row``, ``x``, ``y``, con
+        ``min(n_puntos, celdas_disponibles)`` filas.
     """
     if tipo not in TiposPatron:
         raise ValueError(f"tipo debe ser uno de {TiposPatron}, no {tipo!r}")
@@ -117,6 +159,14 @@ def generar_patron(
     if len(celdas) == 0 or n_puntos == 0:
         return _añadir_coords(celdas.iloc[0:0], n_grid)
 
+    # Los parámetros geométricos escalan con n_grid para que la restricción
+    # (radio de clúster, distancia mínima) no limite el máximo alcanzable en
+    # grillas grandes; en grillas pequeñas se mantienen los valores previos.
+    if radio_cluster is None:
+        radio_cluster = max(6, round(n_grid / 5))
+    if dist_min_disperso is None:
+        dist_min_disperso = max(3.0, n_grid / 10)
+
     if tipo == "agrupado":
         puntos = _generar_agrupado(
             celdas, n_puntos, rng, n_clusters, radio_cluster
@@ -127,6 +177,12 @@ def generar_patron(
         n_sel = min(n_puntos, len(celdas))
         idx = rng.choice(len(celdas), size=n_sel, replace=False)
         puntos = celdas.iloc[idx].reset_index(drop=True)
+
+    # Garantía: si las restricciones geométricas dejaron el resultado por
+    # debajo de min(n_puntos, celdas_disponibles), se completa con celdas
+    # libres restantes (relaja la propiedad de agrupamiento/dispersión solo
+    # para los puntos excedentes, nunca deja de alcanzar el máximo posible).
+    puntos = _completar_hasta(puntos, celdas, n_puntos, rng)
 
     return _añadir_coords(puntos, n_grid)
 
@@ -169,9 +225,17 @@ def _generar_disperso(
     n_puntos: int,
     rng: np.random.Generator,
     dist_min: float,
-    max_intentos: int = 20000,
+    max_intentos: Optional[int] = None,
 ) -> pd.DataFrame:
-    """Patrón disperso: proceso de inhibición simple (distancia mínima)."""
+    """Patrón disperso: proceso de inhibición simple (distancia mínima).
+
+    ``max_intentos`` escala con ``n_puntos`` y el tamaño del espacio de
+    celdas disponible para que grillas grandes con muchos puntos solicitados
+    tengan presupuesto suficiente de intentos antes de recurrir al relleno
+    de :func:`_completar_hasta`.
+    """
+    if max_intentos is None:
+        max_intentos = min(60000, max(20000, n_puntos * 40, len(celdas) * 4))
     coords = celdas[["col", "row"]].to_numpy()
     primero = rng.integers(len(coords))
     seleccion = [coords[primero]]
