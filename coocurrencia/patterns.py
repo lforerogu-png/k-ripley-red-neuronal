@@ -252,6 +252,33 @@ def _generar_disperso(
     return pd.DataFrame({"col": arr[:, 0], "row": arr[:, 1]})
 
 
+def rango_coincidencias(n_puntos_a: int, n_puntos_b: int, n_grid: int) -> tuple[int, int]:
+    """Rango matemáticamente válido de celdas coincidentes entre A y B.
+
+    En una grilla de ``n_grid**2`` celdas, si ``A`` ocupa ``n_puntos_a``
+    celdas y se quieren colocar ``n_puntos_b`` celdas de B, la parte de B que
+    **no** coincide con A (``n_puntos_b - n_coincidentes``) debe caber en las
+    celdas libres restantes (``n_grid**2 - n_puntos_a``). Esto impone un
+    **mínimo obligatorio** de coincidencias cuando ``A + B`` excede la
+    capacidad total de la grilla:
+
+    .. math::
+        n_{coinc}^{min} = \\max(0,\\; n_A + n_B - n_{grid}^2)
+
+    El máximo posible es simplemente ``min(n_A, n_B)`` (no puede haber más
+    coincidencias que puntos en el patrón más pequeño).
+
+    Returns
+    -------
+    (minimo, maximo)
+    """
+    total_celdas = n_grid * n_grid
+    minimo = max(0, int(n_puntos_a) + int(n_puntos_b) - total_celdas)
+    maximo = max(0, min(int(n_puntos_a), int(n_puntos_b)))
+    minimo = min(minimo, maximo)
+    return minimo, maximo
+
+
 def generar_patron_condicionado(
     p1: pd.DataFrame,
     tipo2: str,
@@ -267,7 +294,15 @@ def generar_patron_condicionado(
     En vez de generar A y B de forma independiente (lo que producía muy pocas
     coocurrencias, como señala el profesor en la reunión), se fuerza que
     exactamente ``n_coincidentes`` celdas de B coincidan con celdas de A. El
-    resto de puntos de B se generan según ``tipo2`` sobre celdas libres.
+    resto de puntos de B se generan según ``tipo2`` sobre celdas **libres de
+    A en su totalidad** (no solo del subconjunto coincidente), de modo que la
+    coocurrencia real resultante sea exactamente ``n_coincidentes`` y no un
+    valor mayor por solapamiento accidental.
+
+    Si ``n_coincidentes`` es matemáticamente insuficiente para que el resto
+    de B (``n_puntos - n_coincidentes``) quepa en las celdas libres de la
+    grilla (ver :func:`rango_coincidencias`), se eleva automáticamente al
+    mínimo obligatorio ``max(0, len(p1) + n_puntos - n_grid**2)``.
 
     Parameters
     ----------
@@ -278,8 +313,8 @@ def generar_patron_condicionado(
     n_puntos:
         Número total de puntos de B.
     n_coincidentes:
-        Número de celdas de B que deben coincidir con A
-        (0 .. min(len(p1), n_puntos)).
+        Número deseado de celdas de B que coinciden con A. Se ajusta al
+        rango válido ``[min_obligatorio, min(len(p1), n_puntos)]``.
     seed:
         Semilla del generador.
     n_grid:
@@ -288,13 +323,14 @@ def generar_patron_condicionado(
     Returns
     -------
     pandas.DataFrame
-        Patrón B con columnas ``col``, ``row``, ``x``, ``y``.
+        Patrón B con columnas ``col``, ``row``, ``x``, ``y``. El total de
+        filas siempre alcanza ``min(n_puntos, n_grid**2)``.
     """
     rng = np.random.default_rng(seed)
     n_puntos = int(max(0, n_puntos))
-    n_coincidentes = int(
-        max(0, min(n_coincidentes, len(p1), n_puntos))
-    )
+
+    n_min, n_max = rango_coincidencias(len(p1), n_puntos, n_grid)
+    n_coincidentes = int(max(n_min, min(n_coincidentes, n_max)))
 
     if n_coincidentes > 0 and len(p1) > 0:
         idx = rng.choice(len(p1), size=n_coincidentes, replace=False)
@@ -308,12 +344,14 @@ def generar_patron_condicionado(
     if n_restantes > 0:
         # Seed derivada para que los puntos libres no repliquen la selección de coincidentes.
         seed_libres = None if seed is None else int(seed) + 7919
+        # Se excluye TODO el patrón A (no solo `coinc`) para que la
+        # coocurrencia real resultante sea exactamente `n_coincidentes`.
         libres = generar_patron(
             tipo2,
             n_restantes,
             seed_libres,
             n_grid=n_grid,
-            celdas_ocupadas=coinc,
+            celdas_ocupadas=p1,
             **kwargs,
         )
         p2 = pd.concat(

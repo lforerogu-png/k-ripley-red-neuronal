@@ -25,6 +25,7 @@ from coocurrencia import (  # noqa: E402
 )
 from coocurrencia.patterns import (  # noqa: E402
     contar_coincidencias, generar_patron, generar_patron_condicionado,
+    rango_coincidencias,
 )
 
 st.set_page_config(
@@ -640,13 +641,24 @@ n2 = st.sidebar.slider(
 n_efectivo_1 = (
     len(puntos_subidos_a) if (usar_datos_propios_a and puntos_subidos_a is not None) else n1
 )
-max_coinc = int(min(n_efectivo_1, n2))
-n_coincidentes = st.sidebar.slider(
-    "Celdas coincidentes (B|A)", 0, max_coinc, min(30, max_coinc), 1,
-    disabled=usar_datos_propios_b,
-    help="No aplica con datos observados en B.",
-    key="n_coincidentes",
-)
+min_coinc, max_coinc = rango_coincidencias(n_efectivo_1, n2, n_grid)
+if min_coinc >= max_coinc:
+    # Rango degenerado: A y B (más la grilla) dejan un único valor válido.
+    n_coincidentes = max_coinc
+    st.sidebar.caption(f"Celdas coincidentes (B|A): fijo en {max_coinc} (sin margen posible).")
+else:
+    valor_default = int(np.clip(30, min_coinc, max_coinc))
+    n_coincidentes = st.sidebar.slider(
+        "Celdas coincidentes (B|A)", min_coinc, max_coinc, valor_default, 1,
+        disabled=usar_datos_propios_b,
+        help="No aplica con datos observados en B.",
+        key="n_coincidentes",
+    )
+if min_coinc > 0 and not usar_datos_propios_b:
+    st.sidebar.caption(
+        f"Mínimo obligatorio: {min_coinc} · A ({n_efectivo_1}) + B ({n2}) "
+        f"excede la capacidad de la grilla ({n_grid}² = {n_grid * n_grid})."
+    )
 seed2 = st.sidebar.number_input(
     "Semilla aleatoria (B)", 1, 999999, 202,
     disabled=usar_datos_propios_b, key="seed_b",
