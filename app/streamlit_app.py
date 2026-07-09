@@ -1052,7 +1052,7 @@ conc_tipo_a = st.sidebar.selectbox(
     key="conc_tipo_a",
 )
 conc_tipo_b = st.sidebar.selectbox(
-    "Tipo fijo Patrón B", ["agrupado", "disperso", "aleatorio"], 1,
+    "Tipo fijo Patrón B", ["agrupado", "disperso", "aleatorio"], 0,
     key="conc_tipo_b",
 )
 conc_definicion_label = st.sidebar.selectbox(
@@ -1661,6 +1661,11 @@ with tab_conc:
         </p>
         """,
         unsafe_allow_html=True,
+    )
+    st.info(
+        "Con patrones muy dispersos la coocurrencia puede ser insuficiente para "
+        "entrenar un clasificador significativo; se recomiendan patrones agrupados "
+        "o aumentar el número de puntos."
     )
 
     conc_definicion = (
