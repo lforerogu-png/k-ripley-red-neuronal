@@ -30,6 +30,26 @@ from sklearn.preprocessing import StandardScaler
 from .dataset import FEATURES, filtrar_coloreadas
 
 
+def _safe_log_loss(
+    y: np.ndarray, proba: np.ndarray, classes_model: np.ndarray
+) -> float:
+    """Calcula log-loss alineando ``proba`` con ``modelo.classes_``.
+
+    ``sklearn.metrics.log_loss`` falla si hay menos de 2 etiquetas en
+    ``labels`` o si ``y`` contiene clases ausentes en el modelo (p. ej.
+    validación con una clase que no apareció en entrenamiento).
+    """
+    if len(classes_model) < 2:
+        return 0.0
+    y = np.asarray(y)
+    mask = np.isin(y, classes_model)
+    if not np.any(mask):
+        return float("nan")
+    return float(
+        log_loss(y[mask], proba[mask], labels=classes_model)
+    )
+
+
 # ---------------------------------------------------------------------------
 # Particiones por simulación
 # ---------------------------------------------------------------------------
@@ -183,11 +203,15 @@ def entrenar_mlp(
             modelo.partial_fit(Xtr, ytr, classes=clases)
             if registrar_curvas:
                 ptr = modelo.predict_proba(Xtr)
-                res.loss_train.append(log_loss(ytr, ptr, labels=clases))
+                res.loss_train.append(
+                    _safe_log_loss(ytr, ptr, modelo.classes_)
+                )
                 res.acc_train.append(accuracy_score(ytr, modelo.predict(Xtr)))
                 if Xva is not None:
                     pva = modelo.predict_proba(Xva)
-                    res.loss_val.append(log_loss(yva, pva, labels=clases))
+                    res.loss_val.append(
+                        _safe_log_loss(yva, pva, modelo.classes_)
+                    )
                     res.acc_val.append(accuracy_score(yva, modelo.predict(Xva)))
     return res
 

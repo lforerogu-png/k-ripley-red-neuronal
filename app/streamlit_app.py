@@ -406,33 +406,45 @@ with tab_mlp:
         )
     if st.button("Entrenar y evaluar", type="primary"):
         with st.spinner("Simulando datos y entrenando..."):
-            datos = dataset.simular_dataset(
-                n_sim=n_sim, n_grid=n_grid, n_pts_min=60, n_pts_max=200,
-                r_ref=r_ref, metodo=metodo_k, seed=42,
-                p1_fijo=p1_fijo_mlp, p2_fijo=p2_fijo_mlp,
-            )
-            fracs = (pct_train / 100, (1 - pct_train / 100) / 2,
-                     (1 - pct_train / 100) / 2)
-            part = models.particion_por_sim(datos, fracs, seed=42)
-            hidden = eval(capa)
-            res = models.entrenar_mlp(
-                part.train, part.val, hidden_layer_sizes=hidden,
-                learning_rate_init=lr, max_epocas=250,
-            )
-            pred = res.predecir(part.test)
-            proba = res.predecir_proba(part.test)
-            n_blancas = int(datos[datos["sim_id"].isin(
-                part.test["sim_id"].unique())]["celda_blanca"].sum())
-            rep = metrics.evaluar(
-                part.test["clase_celda"].to_numpy(), pred, proba,
-                clases=CLASES_3, n_blancas=n_blancas,
-            )
-            st.session_state["rep"] = rep
-            st.session_state["res"] = res
-            st.session_state["datos_info"] = {
-                "n_train": len(part.train), "n_test": len(part.test),
-                "esquema": part.esquema,
-            }
+            try:
+                datos = dataset.simular_dataset(
+                    n_sim=n_sim, n_grid=n_grid, n_pts_min=60, n_pts_max=200,
+                    r_ref=r_ref, metodo=metodo_k, seed=42,
+                    p1_fijo=p1_fijo_mlp, p2_fijo=p2_fijo_mlp,
+                )
+                if datos.empty:
+                    st.error("No se pudo generar el dataset de entrenamiento.")
+                    st.stop()
+                coloreadas = dataset.filtrar_coloreadas(datos)
+                if coloreadas["clase_celda"].nunique() < 2:
+                    st.warning(
+                        "El dataset tiene solo una clase coloreada. El entrenamiento "
+                        "continuará, pero las métricas pueden ser limitadas."
+                    )
+                fracs = (pct_train / 100, (1 - pct_train / 100) / 2,
+                         (1 - pct_train / 100) / 2)
+                part = models.particion_por_sim(datos, fracs, seed=42)
+                hidden = eval(capa)
+                res = models.entrenar_mlp(
+                    part.train, part.val, hidden_layer_sizes=hidden,
+                    learning_rate_init=lr, max_epocas=250,
+                )
+                pred = res.predecir(part.test)
+                proba = res.predecir_proba(part.test)
+                n_blancas = int(datos[datos["sim_id"].isin(
+                    part.test["sim_id"].unique())]["celda_blanca"].sum())
+                rep = metrics.evaluar(
+                    part.test["clase_celda"].to_numpy(), pred, proba,
+                    clases=CLASES_3, n_blancas=n_blancas,
+                )
+                st.session_state["rep"] = rep
+                st.session_state["res"] = res
+                st.session_state["datos_info"] = {
+                    "n_train": len(part.train), "n_test": len(part.test),
+                    "esquema": part.esquema,
+                }
+            except Exception as exc:  # noqa: BLE001
+                st.error(f"Error durante el entrenamiento: {exc}")
 
     if "rep" in st.session_state:
         rep = st.session_state["rep"]
