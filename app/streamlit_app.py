@@ -424,6 +424,22 @@ def _generar_csv_ejemplo() -> bytes:
     return df_ejemplo.to_csv(index=False).encode("utf-8")
 
 
+def _formatear_coord(valor: float) -> str:
+    """Formatea un valor de coordenada para mostrar en mensajes al usuario."""
+    if not np.isfinite(valor):
+        return "nan"
+    if abs(valor) >= 1000 or (abs(valor) > 0 and abs(valor) < 0.01):
+        return f"{valor:.4g}"
+    return f"{valor:.4f}".rstrip("0").rstrip(".")
+
+
+def _rescale_minmax(vals: np.ndarray, vmin: float, vmax: float, n_grid: int) -> np.ndarray:
+    """Re-escala linealmente ``vals`` al rango [0, ``n_grid``]."""
+    if vmax == vmin:
+        return np.full_like(vals, n_grid / 2.0, dtype=float)
+    return (vals - vmin) / (vmax - vmin) * n_grid
+
+
 def _procesar_csv_subido(archivo, n_grid: int) -> dict:
     resultado: dict = {"error": None, "warning": None, "puntos": None, "info": None}
     try:
@@ -442,13 +458,12 @@ def _procesar_csv_subido(archivo, n_grid: int) -> dict:
         if len(x) == 0:
             resultado["error"] = "No se encontraron coordenadas numéricas válidas."
             return resultado
-        normalizado = bool(np.all(np.abs(x) <= 1) and np.all(np.abs(y) <= 1))
-        if normalizado:
-            x_celda, y_celda = x * n_grid, y * n_grid
-            escala_txt = "normalizada (0–1)"
-        else:
-            x_celda, y_celda = x, y
-            escala_txt = "celdas (0–30)"
+
+        min_x, max_x = float(x.min()), float(x.max())
+        min_y, max_y = float(y.min()), float(y.max())
+        x_celda = _rescale_minmax(x, min_x, max_x, n_grid)
+        y_celda = _rescale_minmax(y, min_y, max_y, n_grid)
+
         col = np.clip(np.floor(x_celda).astype(int) + 1, 1, n_grid)
         row = np.clip(np.floor(y_celda).astype(int) + 1, 1, n_grid)
         puntos = (
@@ -468,10 +483,12 @@ def _procesar_csv_subido(archivo, n_grid: int) -> dict:
         puntos["y"] = (puntos["row"] - 0.5) / n_grid
         resultado["puntos"] = puntos
         resultado["info"] = {
-            "n": len(puntos), "escala": escala_txt,
-            "rango": (
-                f"x:[{x_celda.min():.1f}, {x_celda.max():.1f}]  "
-                f"y:[{y_celda.min():.1f}, {y_celda.max():.1f}]"
+            "n": len(puntos),
+            "mensaje": (
+                f"Coordenadas originales: x=[{_formatear_coord(min_x)}, "
+                f"{_formatear_coord(max_x)}], y=[{_formatear_coord(min_y)}, "
+                f"{_formatear_coord(max_y)}]. Re-escaladas automáticamente a la "
+                f"grilla {n_grid}×{n_grid}."
             ),
         }
     except Exception as exc:  # noqa: BLE001
@@ -548,7 +565,7 @@ archivo_csv_a = st.sidebar.file_uploader(
     "Archivo CSV (coordenadas A)", type=["csv"], key="csv_uploader_a",
 )
 st.sidebar.caption(
-    "Columnas requeridas: x, y. Escala 0–30 (celdas) o 0–1 (normalizada)."
+    "Columnas requeridas: x, y. Cualquier unidad o rango; se re-escalan automáticamente a la grilla."
 )
 st.sidebar.download_button(
     "Descargar plantilla CSV",
@@ -569,9 +586,8 @@ if archivo_csv_a is not None:
         if resultado_csv_a["warning"]:
             st.sidebar.warning(resultado_csv_a["warning"])
         info_a = resultado_csv_a["info"]
-        st.sidebar.caption(
-            f"{info_a['n']} puntos cargados · {info_a['escala']} · {info_a['rango']}"
-        )
+        st.sidebar.caption(f"{info_a['n']} puntos cargados.")
+        st.sidebar.info(info_a["mensaje"])
     usar_datos_propios_a = st.sidebar.checkbox(
         "Usar datos observados (A)",
         value=puntos_subidos_a is not None,
@@ -584,7 +600,7 @@ archivo_csv_b = st.sidebar.file_uploader(
     "Archivo CSV (coordenadas B)", type=["csv"], key="csv_uploader_b",
 )
 st.sidebar.caption(
-    "Columnas requeridas: x, y. Escala 0–30 (celdas) o 0–1 (normalizada)."
+    "Columnas requeridas: x, y. Cualquier unidad o rango; se re-escalan automáticamente a la grilla."
 )
 st.sidebar.download_button(
     "Descargar plantilla CSV",
@@ -605,9 +621,8 @@ if archivo_csv_b is not None:
         if resultado_csv_b["warning"]:
             st.sidebar.warning(resultado_csv_b["warning"])
         info_b = resultado_csv_b["info"]
-        st.sidebar.caption(
-            f"{info_b['n']} puntos cargados · {info_b['escala']} · {info_b['rango']}"
-        )
+        st.sidebar.caption(f"{info_b['n']} puntos cargados.")
+        st.sidebar.info(info_b["mensaje"])
     usar_datos_propios_b = st.sidebar.checkbox(
         "Usar datos observados (B)",
         value=puntos_subidos_b is not None,
