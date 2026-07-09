@@ -216,6 +216,7 @@ def simular_dataset(
     n_sim_env: int = 39,
     verbose: bool = False,
     p1_fijo: Optional[pd.DataFrame] = None,
+    p2_fijo: Optional[pd.DataFrame] = None,
 ) -> pd.DataFrame:
     """Simula ``n_sim`` pares de patrones y arma el dataset completo.
 
@@ -239,6 +240,13 @@ def simular_dataset(
         Si se provee (por ejemplo, puntos reales cargados desde un CSV), se
         usa este patrón A **fijo** en todas las simulaciones en lugar de
         generarlo al azar; solo el patrón B varía entre simulaciones.
+    p2_fijo:
+        Igual que ``p1_fijo`` pero para el patrón B: si se provee, se usa
+        fijo en todas las simulaciones en lugar de generarlo condicionado a
+        A. Si ambos (``p1_fijo`` y ``p2_fijo``) se proveen, el par queda
+        completamente fijo y todas las simulaciones producen el mismo
+        resultado (no hay variabilidad para entrenar, pero permite evaluar
+        el par real bajo el mismo pipeline).
     """
     tipos = ("agrupado", "disperso", "aleatorio")
     rng = np.random.default_rng(seed)
@@ -260,15 +268,19 @@ def simular_dataset(
             p1 = generar_patron(t1, n_pts, s, n_grid=n_grid)
         if len(p1) == 0:
             continue
-        max_coinc = min(len(p1), n_pts)
-        if n_coincidentes_rango is None:
-            n_coinc = int(rng.integers(0, max_coinc + 1))
+
+        if p2_fijo is not None:
+            p2 = p2_fijo
         else:
-            lo, hi = n_coincidentes_rango
-            n_coinc = int(rng.integers(lo, min(hi, max_coinc) + 1))
-        p2 = generar_patron_condicionado(
-            p1, t2, n_pts, n_coinc, s + 500, n_grid=n_grid
-        )
+            max_coinc = min(len(p1), n_pts)
+            if n_coincidentes_rango is None:
+                n_coinc = int(rng.integers(0, max_coinc + 1))
+            else:
+                lo, hi = n_coincidentes_rango
+                n_coinc = int(rng.integers(lo, min(hi, max_coinc) + 1))
+            p2 = generar_patron_condicionado(
+                p1, t2, n_pts, n_coinc, s + 500, n_grid=n_grid
+            )
         if len(p2) == 0:
             continue
 

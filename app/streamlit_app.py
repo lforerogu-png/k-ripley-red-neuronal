@@ -137,9 +137,9 @@ st.sidebar.title("Controles")
 st.sidebar.header("Grilla")
 n_grid = st.sidebar.slider("Tamaño de grilla (N x N)", 10, 50, 30, 5)
 
-st.sidebar.header("📂 Cargar datos propios")
-archivo_csv = st.sidebar.file_uploader(
-    "Subir CSV con coordenadas", type=["csv"], key="csv_uploader"
+st.sidebar.header("📂 Cargar datos propios — Patrón A")
+archivo_csv_a = st.sidebar.file_uploader(
+    "Subir CSV con coordenadas (A)", type=["csv"], key="csv_uploader_a"
 )
 st.sidebar.caption(
     "El CSV debe tener columnas llamadas exactamente 'x' e 'y' con las "
@@ -151,51 +151,101 @@ st.sidebar.download_button(
     data=_generar_csv_ejemplo(),
     file_name="ejemplo_puntos.csv",
     mime="text/csv",
+    key="descargar_ejemplo_a",
 )
 
-puntos_subidos: Optional[pd.DataFrame] = None
-usar_datos_propios = False
-if archivo_csv is not None:
-    resultado_csv = _procesar_csv_subido(archivo_csv, n_grid)
-    if resultado_csv["error"]:
-        st.sidebar.error(resultado_csv["error"])
+puntos_subidos_a: Optional[pd.DataFrame] = None
+usar_datos_propios_a = False
+if archivo_csv_a is not None:
+    resultado_csv_a = _procesar_csv_subido(archivo_csv_a, n_grid)
+    if resultado_csv_a["error"]:
+        st.sidebar.error(resultado_csv_a["error"])
     else:
-        puntos_subidos = resultado_csv["puntos"]
-        if resultado_csv["warning"]:
-            st.sidebar.warning(resultado_csv["warning"])
-        info = resultado_csv["info"]
+        puntos_subidos_a = resultado_csv_a["puntos"]
+        if resultado_csv_a["warning"]:
+            st.sidebar.warning(resultado_csv_a["warning"])
+        info_a = resultado_csv_a["info"]
         st.sidebar.success(
-            f"Se cargaron {info['n']} puntos válidos. Escala detectada: "
-            f"{info['escala']}. Rango: {info['rango']}."
+            f"Se cargaron {info_a['n']} puntos válidos. Escala detectada: "
+            f"{info_a['escala']}. Rango: {info_a['rango']}."
         )
-    usar_datos_propios = st.sidebar.checkbox(
-        "Usar datos cargados en lugar del simulador",
-        value=puntos_subidos is not None,
-        disabled=puntos_subidos is None,
+    usar_datos_propios_a = st.sidebar.checkbox(
+        "Usar datos cargados en lugar del simulador (A)",
+        value=puntos_subidos_a is not None,
+        disabled=puntos_subidos_a is None,
+        key="usar_propios_a",
+    )
+
+st.sidebar.header("📂 Cargar datos propios — Patrón B")
+archivo_csv_b = st.sidebar.file_uploader(
+    "Subir CSV con coordenadas (B)", type=["csv"], key="csv_uploader_b"
+)
+st.sidebar.caption(
+    "El CSV debe tener columnas llamadas exactamente 'x' e 'y' con las "
+    "coordenadas de los puntos. Valores entre 0 y 30 (coordenadas de celda) "
+    "o entre 0 y 1 (normalizadas) — se detectan automáticamente."
+)
+st.sidebar.download_button(
+    "Descargar CSV de ejemplo",
+    data=_generar_csv_ejemplo(),
+    file_name="ejemplo_puntos.csv",
+    mime="text/csv",
+    key="descargar_ejemplo_b",
+)
+
+puntos_subidos_b: Optional[pd.DataFrame] = None
+usar_datos_propios_b = False
+if archivo_csv_b is not None:
+    resultado_csv_b = _procesar_csv_subido(archivo_csv_b, n_grid)
+    if resultado_csv_b["error"]:
+        st.sidebar.error(resultado_csv_b["error"])
+    else:
+        puntos_subidos_b = resultado_csv_b["puntos"]
+        if resultado_csv_b["warning"]:
+            st.sidebar.warning(resultado_csv_b["warning"])
+        info_b = resultado_csv_b["info"]
+        st.sidebar.success(
+            f"Se cargaron {info_b['n']} puntos válidos. Escala detectada: "
+            f"{info_b['escala']}. Rango: {info_b['rango']}."
+        )
+    usar_datos_propios_b = st.sidebar.checkbox(
+        "Usar datos cargados en lugar del simulador (B)",
+        value=puntos_subidos_b is not None,
+        disabled=puntos_subidos_b is None,
+        key="usar_propios_b",
     )
 
 st.sidebar.header("Patrón A (azul)")
 tipo1 = st.sidebar.selectbox(
-    "Tipo A", ["agrupado", "disperso", "aleatorio"], 0, disabled=usar_datos_propios,
+    "Tipo A", ["agrupado", "disperso", "aleatorio"], 0, disabled=usar_datos_propios_a,
 )
 n1 = st.sidebar.slider(
-    "Puntos A", 1, 500, 120, 1, disabled=usar_datos_propios,
+    "Puntos A", 1, 500, 120, 1, disabled=usar_datos_propios_a,
 )
 seed1 = st.sidebar.number_input(
-    "Semilla A", 1, 999999, 101, disabled=usar_datos_propios,
+    "Semilla A", 1, 999999, 101, disabled=usar_datos_propios_a,
 )
 
 st.sidebar.header("Patrón B (amarillo)")
-tipo2 = st.sidebar.selectbox("Tipo B", ["agrupado", "disperso", "aleatorio"], 1)
-n2 = st.sidebar.slider("Puntos B", 1, 500, 120, 1)
+tipo2 = st.sidebar.selectbox(
+    "Tipo B", ["agrupado", "disperso", "aleatorio"], 1, disabled=usar_datos_propios_b,
+)
+n2 = st.sidebar.slider(
+    "Puntos B", 1, 500, 120, 1, disabled=usar_datos_propios_b,
+)
 n_efectivo_1 = (
-    len(puntos_subidos) if (usar_datos_propios and puntos_subidos is not None) else n1
+    len(puntos_subidos_a) if (usar_datos_propios_a and puntos_subidos_a is not None) else n1
 )
 max_coinc = int(min(n_efectivo_1, n2))
 n_coincidentes = st.sidebar.slider(
-    "Celdas coincidentes B con A", 0, max_coinc, min(30, max_coinc), 1
+    "Celdas coincidentes B con A", 0, max_coinc, min(30, max_coinc), 1,
+    disabled=usar_datos_propios_b,
+    help="No aplica cuando B usa datos reales: las coincidencias se calculan "
+         "directamente entre los puntos cargados.",
 )
-seed2 = st.sidebar.number_input("Semilla B", 1, 999999, 202)
+seed2 = st.sidebar.number_input(
+    "Semilla B", 1, 999999, 202, disabled=usar_datos_propios_b,
+)
 
 st.sidebar.header("Clasificación K de Ripley")
 r_ref = st.sidebar.slider("Radio de referencia r", 0.05, 0.25, 0.20, 0.01)
@@ -228,11 +278,16 @@ tab_pat, tab_k, tab_grilla, tab_mlp, tab_teoria = st.tabs(
 )
 
 
-if usar_datos_propios and puntos_subidos is not None:
-    p1 = puntos_subidos
+if usar_datos_propios_a and puntos_subidos_a is not None:
+    p1 = puntos_subidos_a
 else:
     p1 = _patron_simulado(tipo1, n1, seed1, n_grid)
-p2 = _patron_condicionado(p1, tipo2, n2, n_coincidentes, seed2, n_grid)
+
+if usar_datos_propios_b and puntos_subidos_b is not None:
+    p2 = puntos_subidos_b
+else:
+    p2 = _patron_condicionado(p1, tipo2, n2, n_coincidentes, seed2, n_grid)
+
 resumen = dataset.analizar_par(p1, p2, r_ref=r_ref, metodo=metodo_k)
 
 
@@ -240,15 +295,19 @@ resumen = dataset.analizar_par(p1, p2, r_ref=r_ref, metodo=metodo_k)
 # Tab 1: patrones
 # ---------------------------------------------------------------------------
 with tab_pat:
-    if usar_datos_propios and puntos_subidos is not None:
+    if usar_datos_propios_a and puntos_subidos_a is not None:
         titulo_a = f"Patrón A: datos reales ({len(p1)} puntos)"
     else:
         titulo_a = f"Patrón A: {tipo1}"
+    if usar_datos_propios_b and puntos_subidos_b is not None:
+        titulo_b = f"Patrón B: datos reales ({len(p2)} puntos)"
+    else:
+        titulo_b = f"Patrón B: {tipo2}"
     c1, c2, c3 = st.columns(3)
     with c1:
         st.pyplot(viz.fig_patron(p1, "#1565C0", titulo_a, n_grid))
     with c2:
-        st.pyplot(viz.fig_patron(p2, "#F9A825", f"Patrón B: {tipo2}", n_grid))
+        st.pyplot(viz.fig_patron(p2, "#F9A825", titulo_b, n_grid))
     with c3:
         st.pyplot(viz.fig_grilla_colores(p1, p2, n_grid, "Superposición"))
 
@@ -324,18 +383,33 @@ with tab_mlp:
         "Entrena el MLP sobre simulaciones y evalúa **solo en celdas "
         "coloreadas**. Genera matrices 3x3 y 2x2."
     )
-    p1_fijo_mlp = p1 if (usar_datos_propios and puntos_subidos is not None) else None
-    if p1_fijo_mlp is not None:
+    p1_fijo_mlp = p1 if (usar_datos_propios_a and puntos_subidos_a is not None) else None
+    p2_fijo_mlp = p2 if (usar_datos_propios_b and puntos_subidos_b is not None) else None
+    if p1_fijo_mlp is not None and p2_fijo_mlp is not None:
+        st.info(
+            f"Se usarán ambos patrones cargados como par **fijo** "
+            f"({len(p1_fijo_mlp)} puntos A, {len(p2_fijo_mlp)} puntos B) en "
+            "todas las simulaciones de entrenamiento. Sin variabilidad entre "
+            "simulaciones, el modelo evaluará repetidamente el mismo par real."
+        )
+    elif p1_fijo_mlp is not None:
         st.info(
             f"Se usará el patrón A cargado ({len(p1_fijo_mlp)} puntos reales) "
             "como patrón A **fijo** en todas las simulaciones de entrenamiento; "
             "solo el patrón B variará."
         )
+    elif p2_fijo_mlp is not None:
+        st.info(
+            f"Se usará el patrón B cargado ({len(p2_fijo_mlp)} puntos reales) "
+            "como patrón B **fijo** en todas las simulaciones de entrenamiento; "
+            "solo el patrón A variará."
+        )
     if st.button("Entrenar y evaluar", type="primary"):
         with st.spinner("Simulando datos y entrenando..."):
             datos = dataset.simular_dataset(
                 n_sim=n_sim, n_grid=n_grid, n_pts_min=60, n_pts_max=200,
-                r_ref=r_ref, metodo=metodo_k, seed=42, p1_fijo=p1_fijo_mlp,
+                r_ref=r_ref, metodo=metodo_k, seed=42,
+                p1_fijo=p1_fijo_mlp, p2_fijo=p2_fijo_mlp,
             )
             fracs = (pct_train / 100, (1 - pct_train / 100) / 2,
                      (1 - pct_train / 100) / 2)
