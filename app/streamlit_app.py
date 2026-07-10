@@ -872,11 +872,14 @@ def _ejecutar_entrenamiento(
     st.session_state["rep"] = rep
     st.session_state["res"] = res
     st.session_state["test_df"] = part.test
+    st.session_state["mlp_datos"] = datos
+    st.session_state["mlp_part"] = part
     st.session_state["datos_info"] = {
         "n_train": len(part.train), "n_test": len(part.test),
         "esquema": part.esquema,
     }
     st.session_state.pop("importancia_vars", None)
+    st.session_state.pop("comparacion_arq", None)
 
 
 # ---------------------------------------------------------------------------
@@ -1045,7 +1048,11 @@ entrenar_click = st.sidebar.button("Entrenar modelo", type="primary", key="btn_e
 _sidebar_section("Modo simulaciones (concordancia)")
 conc_n_sim = st.sidebar.slider(
     "Número de simulaciones", 50, 500, 200, 10, key="conc_n_sim",
-    help="Cada simulación produce una fila del dataset (índices + etiqueta).",
+    help=(
+        "Cada simulación produce una fila del dataset (índices + etiqueta). "
+        "Con 200 sims y partición 80/20 el test tiene ~40 filas; menos simulaciones "
+        "facilitan accuracy 100% por azar."
+    ),
 )
 conc_tipo_a = st.sidebar.selectbox(
     "Tipo fijo Patrón A", ["agrupado", "disperso", "aleatorio"], 0,
@@ -1599,43 +1606,48 @@ with tab_mlp:
     st.markdown(
         """
         <p class="plain-text">
-        Entrena seis configuraciones fijas sobre el mismo dataset simulado y
-        las ordena por accuracy. La mejor se resalta en verde.
+        Entrena seis configuraciones fijas sobre el <strong>mismo dataset</strong>
+        del último entrenamiento (panel lateral → Entrenar modelo) y las ordena
+        por accuracy. La mejor se resalta en verde.
         </p>
         """,
         unsafe_allow_html=True,
     )
     if st.button("Comparar arquitecturas", key="btn_comparar_arq"):
-        try:
-            datos_arq, part_arq = _preparar_datos_mlp(
-                n_sim, n_grid, r_ref, metodo_k, pct_train,
-                p1_fijo_mlp, p2_fijo_mlp,
+        if "mlp_datos" not in st.session_state or "mlp_part" not in st.session_state:
+            st.warning(
+                "Primero entrene el modelo con el botón **Entrenar modelo** "
+                "del panel lateral (simulador o CSV)."
             )
-            barra = st.progress(0.0, text="Preparando comparación...")
-            filas = []
-            total = len(ARQUITECTURAS_COMPARACION)
-            for i, (etiqueta, hidden) in enumerate(ARQUITECTURAS_COMPARACION):
-                barra.progress(
-                    i / total,
-                    text=f"Entrenando {etiqueta} ({i + 1}/{total})...",
+        else:
+            try:
+                datos_arq = st.session_state["mlp_datos"]
+                part_arq = st.session_state["mlp_part"]
+                barra = st.progress(0.0, text="Preparando comparación...")
+                filas = []
+                total = len(ARQUITECTURAS_COMPARACION)
+                for i, (etiqueta, hidden) in enumerate(ARQUITECTURAS_COMPARACION):
+                    barra.progress(
+                        i / total,
+                        text=f"Entrenando {etiqueta} ({i + 1}/{total})...",
+                    )
+                    rep_i, seg_i, _ = _evaluar_arquitectura(datos_arq, part_arq, hidden, lr)
+                    filas.append({
+                        "arquitectura": etiqueta,
+                        "accuracy": rep_i.accuracy,
+                        "macro_f1": rep_i.macro["f1"],
+                        "tiempo_s": seg_i,
+                    })
+                barra.progress(1.0, text="Comparación completada.")
+                barra.empty()
+                df_arq = (
+                    pd.DataFrame(filas)
+                    .sort_values("accuracy", ascending=False)
+                    .reset_index(drop=True)
                 )
-                rep_i, seg_i, _ = _evaluar_arquitectura(datos_arq, part_arq, hidden, lr)
-                filas.append({
-                    "arquitectura": etiqueta,
-                    "accuracy": rep_i.accuracy,
-                    "macro_f1": rep_i.macro["f1"],
-                    "tiempo_s": seg_i,
-                })
-            barra.progress(1.0, text="Comparación completada.")
-            barra.empty()
-            df_arq = (
-                pd.DataFrame(filas)
-                .sort_values("accuracy", ascending=False)
-                .reset_index(drop=True)
-            )
-            st.session_state["comparacion_arq"] = df_arq
-        except Exception as exc:  # noqa: BLE001
-            st.error(f"No se pudo comparar arquitecturas: {exc}")
+                st.session_state["comparacion_arq"] = df_arq
+            except Exception as exc:  # noqa: BLE001
+                st.error(f"No se pudo comparar arquitecturas: {exc}")
 
     if "comparacion_arq" in st.session_state:
         st.markdown(
